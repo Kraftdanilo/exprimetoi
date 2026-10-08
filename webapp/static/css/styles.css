@@ -281,6 +281,110 @@ body::after {
   animation: sweep-highlight 0.65s 0.15s cubic-bezier(0.2, 0.9, 0.25, 1) both;
 }
 @keyframes sweep-highlight {
+/* ============================================================
+   IA Studio — Choix du modèle et zone de saisie
+   ============================================================ */
+
+#ia-studio {
+  max-width: 820px;
+}
+
+#ia-studio .vitrine-header {
+  font-size: 28px;
+}
+
+#ia-studio .sub {
+  max-width: 600px;
+}
+
+#ia-studio .form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+#ia-studio .form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#ia-studio .form-field.full {
+  grid-column: 1 / -1;
+}
+
+#ia-studio label {
+  font: 900 10px/1.4 var(--body);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+
+#ia-studio input[type="url"],
+#ia-studio select,
+#ia-studio textarea {
+  padding: 10px 12px;
+  border: 3px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--sand);
+  box-shadow: var(--shadow-sm);
+  font: 900 14px/1.5 var(--body);
+  color: var(--ink);
+}
+
+#ia-studio input[type="url"]:focus,
+#ia-studio select:focus,
+#ia-studio textarea:focus {
+  box-shadow: 5px 5px 0 var(--ink), 0 0 0 4px var(--sky);
+  outline: none;
+}
+
+#ia-studio textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+#ia-studio .hint {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+#ia-studio .form-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+#ia-studio .form-actions .primary {
+  padding: 12px 20px;
+  font-size: 13px;
+}
+
+#ia-studio .output {
+  margin-top: 24px;
+  padding: 16px;
+  border: 3px solid var(--ink);
+  background: var(--sand-2);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  max-height: 500px;
+  overflow: auto;
+}
+
+#ia-studio .output pre {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#ia-studio .output .err {
+  color: var(--err);
+}
+
   from { transform: scaleX(0); }
   to   { transform: scaleX(1); }
 }

@@ -30,7 +30,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import Flask, jsonify, render_template, request, send_file, send_from_directory
 from dotenv import load_dotenv
 from history_store import HistoryStore
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
@@ -90,6 +90,15 @@ app.config["MAX_CONTENT_LENGTH"] = _MAX_UPLOAD_BYTES + 1024
 def create_http_server(host: str = "127.0.0.1", port: int = 0):
     """Crée le serveur WSGI utilisé par l'application de bureau PyWebView."""
     return make_server(host, port, app, threaded=True)
+
+
+@app.get("/ia-studio")
+def ia_studio():
+    """Page de configuration de l'outil d'IA Studio."""
+    return send_from_directory(
+        str(_RESOURCE_DIR / "webapp" / "templates"),
+        "ia-studio.html",
+    )
 
 
 class APIError(Exception):
