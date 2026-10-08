@@ -1,0 +1,207 @@
+﻿<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Fautexprimer, studio de synthese vocale Eben, Dane et Michel.">
+  <title>Fautexprimer </title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='fautexprimer.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  <script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
+</head>
+<body>
+  <main class="wrap" id="studio-loading">
+    <div class="ticker" aria-hidden="true"><div class="ticker-track">
+      <span class="ticker-item">Fautexprimer</span><span class="ticker-item">Studio vocal local</span><span class="ticker-item">Eben</span><span class="ticker-item">Dane</span><span class="ticker-item">Michel</span><span class="ticker-item">Export WAV / MP3 / OGG / FLAC / M4A</span><span class="ticker-item">Vitesse 0.5x - 2.0x</span>
+      <span class="ticker-item">Fautexprimer</span><span class="ticker-item">Studio vocal local</span><span class="ticker-item">Eben</span><span class="ticker-item">Dane</span><span class="ticker-item">Michel</span><span class="ticker-item">Export WAV / MP3 / OGG / FLAC / M4A</span><span class="ticker-item">Vitesse 0.5x - 2.0x</span>
+    </div></div>
+    <section class="studio-skeleton" aria-label="Chargement du studio" aria-busy="true">
+      <div class="sk-title"><span class="sk sk-line" style="width:52%;height:26px"></span><span class="sk sk-line" style="width:74%"></span></div>
+      <div class="sk-rows"><span class="sk sk-pill"></span><span class="sk sk-pill"></span><span class="sk sk-pill"></span></div>
+      <div class="sk-rows"><span class="sk" style="height:42px"></span><span class="sk" style="height:42px"></span></div>
+      <div class="sk-stack" style="margin-bottom:16px"><span class="sk" style="height:120px"></span></div>
+      <span class="sk" style="width:46%;height:44px"></span>
+    </section>
+  </main>
+
+  <main class="wrap" id="studio" hidden>
+    <div class="ticker" aria-hidden="true"><div class="ticker-track">
+      <span class="ticker-item">Fautexprimer</span><span class="ticker-item">Studio vocal local</span><span class="ticker-item">Eben</span><span class="ticker-item">Dane</span><span class="ticker-item">Michel</span><span class="ticker-item">Export WAV / MP3 / OGG / FLAC / M4A</span><span class="ticker-item">Vitesse 0.5x - 2.0x</span>
+      <span class="ticker-item">Fautexprimer</span><span class="ticker-item">Studio vocal local</span><span class="ticker-item">Eben</span><span class="ticker-item">Dane</span><span class="ticker-item">Michel</span><span class="ticker-item">Export WAV / MP3 / OGG / FLAC / M4A</span><span class="ticker-item">Vitesse 0.5x - 2.0x</span>
+    </div></div>
+
+    <header class="header">
+      <div class="header-top">
+        <a class="brand" href="#/" aria-label="Retour au studio">
+          <img src="{{ url_for('static', filename='fautexprimer.png') }}" alt="" width="52" height="52">
+          <span>Fautexprimer <span class="sticker" aria-hidden="true">3 moteurs</span></span>
+        </a>
+        <nav class="top-nav" aria-label="Navigation principale">
+          <a class="ghost" href="#/">Studio</a>
+          <a class="ghost" href="#/history">Historique</a>
+          <a class="ghost vitrine-link" href="#/vitrine">Les modeles</a>
+        </nav>
+      </div>
+      <p class="sub">
+        Studio vocal local — Eben, Dane et Michel.
+        <span class="dot wait" id="health-dot" aria-hidden="true"></span>
+        <span class="sr-only" id="health-text" aria-live="polite">Etat du service en cours de verification</span>
+      </p>
+    </header>
+
+    <section class="card">
+      <div class="pills" id="provider-pills" role="tablist" aria-label="Choix du moteur"></div>
+      <p class="provider-note" id="provider-note" aria-live="polite"></p>
+      <div class="text-dashboard" aria-label="Mesure du texte">
+        <div><strong id="text-chars">0</strong><span>caracteres</span></div>
+        <div><strong id="text-words">0</strong><span>mots</span></div>
+        <div><strong id="text-sentences">0</strong><span>phrases</span></div>
+        <div><strong id="text-limit">20 000</strong><span>limite moteur</span></div>
+      </div>
+
+      <div class="row" id="voice-row">
+        <label class="field grow" id="gemini-field" hidden>
+          <span id="gemini-label">Voix Eben</span>
+          <select id="gemini-voice" aria-label="Voix Eben"></select>
+        </label>
+        <div class="field grow voice-skeleton" id="edge-loading" hidden>
+          <span>Chargement des voix</span>
+          <div class="sk-stack"><span class="sk sk-line"></span><span class="sk sk-line"></span><span class="sk sk-line"></span></div>
+        </div>
+        <label class="field grow" id="edge-search-field" hidden>
+          <span id="edge-count">Rechercher des voix</span>
+          <input type="search" id="edge-search" placeholder="fr, Denise, anglais..." autocomplete="off">
+        </label>
+        <label class="field grow" id="edge-field" hidden>
+          <span id="edge-label">Voix Dane</span>
+          <select id="edge-voice" aria-label="Voix Dane"></select>
+        </label>
+        <p class="sub" id="mimo-description" hidden>
+          Clonage de voix : Michel reproduit la voix du clip de reference ci-dessous
+          et lit votre texte avec cette voix. Un clip audio est toujours requis.
+        </p>
+      </div>
+    </section>
+      <div class="panel" id="mimo-panel" hidden>
+        <div class="row">
+          <label class="field grow">
+            <span>Audio de reference (voix a cloner)</span>
+            <input type="file" id="ref-file" accept="audio/*">
+          </label>
+          <label class="field">
+            <span>Micro</span>
+            <button type="button" class="ghost" id="record-button">Enregistrer (micro)</button>
+          </label>
+        </div>
+        <p class="sub clip-ok" id="clip-ready" hidden></p>
+      </div>
+
+      <div class="row sliders">
+        <label class="field grow">
+          <span id="speed-label">Vitesse 1.00x</span>
+          <input type="range" id="speed" min="0.5" max="2" step="0.05" value="1">
+        </label>
+        <label class="field grow">
+          <span id="gain-label">Volume 100%</span>
+          <input type="range" id="gain" min="0" max="2" step="0.05" value="1">
+        </label>
+        <div class="field format-field">
+          <span>Formats de téléchargement</span>
+          <div class="format-options" id="format-options" role="group" aria-label="Formats audio à télécharger"></div>
+          <small class="format-summary" id="format-summary">1 format sélectionné</small>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>Texte a convertir <span class="counter ok" id="text-counter">0 / 20 000 caracteres</span></span>
+        <textarea id="text" rows="6" placeholder="Saisissez votre texte ici...">Bonjour ! Ceci est une demonstration de synthese vocale locale.</textarea>
+      </label>
+      <p class="status err limit-msg" id="limit-message" hidden></p>
+      <p class="text-hint">Les limites sont des plafonds prudents de l'application, pas des garanties universelles des fournisseurs. Pour un texte long, utilisez plusieurs syntheses.</p>
+
+      <div class="actions">
+        <p class="status" id="status" role="status" aria-live="polite" hidden></p>
+        <button class="primary" id="synthesize" type="button">Synthetiser</button>
+      </div>
+
+      <div class="result result--busy" id="synthesis-busy" aria-label="Synthese en cours" hidden>
+        <div class="wave" id="wave"></div><span class="sk sk-block"></span>
+      </div>
+      <div class="result" id="audio-result" hidden>
+        <audio id="audio-player" controls preload="metadata"></audio>
+        <a class="download" id="download" href="#" download="synthese.wav">Telecharger (WAV)</a>
+      </div>
+    </section>
+
+    <footer class="foot">Developpe pour vous — fait a Soubre, le 22 septembre 2026.</footer>
+  </main>
+
+  <main class="wrap wrap-wide" id="history-page" hidden>
+    <div class="ticker" aria-hidden="true"><div class="ticker-track">
+      <span class="ticker-item">Fautexprimer</span><span class="ticker-item">Historique local</span><span class="ticker-item">Syntheses</span><span class="ticker-item">Voix enregistrees</span><span class="ticker-item">SQLite automatique</span><span class="ticker-item">Donnees privees</span>
+      <span class="ticker-item">Fautexprimer</span><span class="ticker-item">Historique local</span><span class="ticker-item">Syntheses</span><span class="ticker-item">Voix enregistrees</span><span class="ticker-item">SQLite automatique</span><span class="ticker-item">Donnees privees</span>
+    </div></div>
+    <header class="header vitrine-header">
+      <a class="ghost back" href="#/">← Retour au studio</a>
+      <div class="history-heading">
+        <div><h1>Historique <span class="sticker sticker--yellow" aria-hidden="true">Local</span></h1><p class="sub">Vos syntheses et clips restent sur ce ordinateur dans une base SQLite privee.</p></div>
+        <button class="ghost" id="history-refresh" type="button">Actualiser</button>
+      </div>
+      <div class="history-stats" id="history-stats" aria-label="Statistiques"></div>
+    </header>
+
+    <section class="history-section" aria-labelledby="synth-history-title">
+      <div class="history-section-head"><div><h2 id="synth-history-title">Synthesees generees</h2><p>Tous les audios produits par l'application.</p></div><button class="danger" id="clear-syntheses" type="button">Tout supprimer</button></div>
+      <div class="history-list" id="syntheses-list"></div>
+    </section>
+
+    <section class="history-section" aria-labelledby="voices-history-title">
+      <div class="history-section-head"><div><h2 id="voices-history-title">Voix importees / enregistrees</h2><p>Les clips disponibles pour Michel.</p></div><button class="danger" id="clear-voices" type="button">Tout supprimer</button></div>
+      <div class="history-list" id="voices-list"></div>
+    </section>
+    <footer class="foot">Historique local — aucune base de donnees dans le dossier partageable.</footer>
+  </main>
+
+  <main class="wrap wrap-wide" id="vitrine" hidden>
+    <div class="ticker" aria-hidden="true"><div class="ticker-track">
+      <span class="ticker-item">Fautexprimer</span><span class="ticker-item">Studio vocal local</span><span class="ticker-item">Eben</span><span class="ticker-item">Dane</span><span class="ticker-item">Michel</span><span class="ticker-item">Export WAV / MP3 / OGG / FLAC / M4A</span><span class="ticker-item">Vitesse 0.5x - 2.0x</span>
+      <span class="ticker-item">Fautexprimer</span><span class="ticker-item">Studio vocal local</span><span class="ticker-item">Eben</span><span class="ticker-item">Dane</span><span class="ticker-item">Michel</span><span class="ticker-item">Export WAV / MP3 / OGG / FLAC / M4A</span><span class="ticker-item">Vitesse 0.5x - 2.0x</span>
+    </div></div>
+    <header class="header vitrine-header">
+      <a class="ghost back" href="#/">← Retour au studio</a>
+      <h1>Fautexprimer <span class="sticker sticker--yellow" aria-hidden="true">Comparatif</span></h1>
+      <p class="sub">Trois moteurs de synthese vocale dans une seule interface. Choisissez selon la qualite, la langue ou la voix recherchees.</p>
+    </header>
+    <section class="models" id="models"></section>
+    <section class="compare">
+      <h2>Comparatif rapide</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Critere</th><th>Eben</th><th>Dane</th><th>Michel</th></tr></thead>
+          <tbody>
+            <tr><td>Choix de voix</td><td>30</td><td>322 (75 langues)</td><td>1 (la votre)</td></tr>
+            <tr><td>Qualite</td><td>★★★★★</td><td>★★★★</td><td>★★★★</td></tr>
+            <tr><td>Rapidite</td><td>★★★</td><td>★★★★★</td><td>★★★★</td></tr>
+            <tr><td>Multilingue</td><td>Oui</td><td>Oui (75)</td><td>Oui</td></tr>
+            <tr><td>Capacite recommandee</td><td>8 000 car.<br>1 400 mots / 200 phrases</td><td>20 000 car.<br>3 500 mots / 600 phrases</td><td>4 000 car.<br>700 mots / 120 phrases</td></tr>
+            <tr><td>Clonage de voix</td><td>Non</td><td>Non</td><td>Oui</td></tr>
+            <tr><td>Acces</td><td>Cle requise</td><td>Libre</td><td>Configuration requise</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section class="howto">
+      <h2>Comment utiliser</h2>
+      <ol class="steps">
+        <li><strong>Choisissez un moteur</strong> avec les pastilles en haut du studio.</li>
+        <li><strong>Selectionnez une voix</strong> (ou enregistrez un clip pour Michel).</li>
+        <li><strong>Reglez la vitesse et le volume</strong> puis saisissez votre texte. Le compteur indique la limite du moteur choisi.</li>
+        <li><strong>Cliquez Synthetiser</strong> — la lecture demarre et le fichier est telechargeable.</li>
+      </ol>
+    </section>
+    <div class="vitrine-cta"><a class="primary" href="#/">Ouvrir le studio</a></div>
+    <footer class="foot">Eben · Dane · Michel — synthese vocale locale.</footer>
+  </main>
+</body>
+</html>
+

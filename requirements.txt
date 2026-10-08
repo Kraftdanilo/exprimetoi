@@ -1,0 +1,23 @@
+google-genai
+python-dotenv
+edge-tts
+miniaudio
+requests
+# NOTE: 'edge-tts' + 'miniaudio' enable the second engine (Edge TTS) with 322
+# Microsoft voices and no API key. 'miniaudio' embeds an MP3 decoder so Edge
+# export works without ffmpeg.
+# NOTE: local desktop playback is intentionally disabled: audio is played by
+# the WebView frontend, so PyAudio is neither required nor bundled.
+# NOTE: 'requests' is used by the optional third engine, MiMo, which
+# talks to a configurable HTTP endpoint and supports voice cloning.
+# NOTE: MP3/OGG/FLAC/M4A export and Gemini speed control use FFmpeg. The source
+# requires it in PATH; Compiler-Fautexprimer.ps1 embeds it in the Windows build.
+# The speed feature uses the standard-library 'audioop' module (Python <=3.12);
+# on Python 3.13+ a pure-Python fallback is used automatically.
+# Desktop et build
+pywebview>=5.0,<7.0
+pyinstaller>=6.0,<7.0
+Pillow>=10,<13
+
+# The web server additionally needs Flask (the HTML/CSS/JS frontend has no build step).
+Flask>=3.0,<4.0

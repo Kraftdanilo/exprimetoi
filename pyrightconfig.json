@@ -1,0 +1,19 @@
+# Pyright / Pylance utilise le venv local du projet.
+# PyAudio reste optionnel et n'est pas requis par l'application de bureau.
+venvPath = "."
+venv = "venv"
+typeCheckingMode = "basic"
+include = [
+    "Google_Gemini_Live_TTS.py",
+    "desktop_app.py",
+    "server.py",
+    "history_store.py",
+    "tools",
+]
+exclude = [
+    "venv",
+    "dist",
+    "build",
+    "webapp",
+]
+reportMissingImports = "warning"
