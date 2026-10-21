@@ -19,5 +19,11 @@ pywebview>=5.0,<7.0
 pyinstaller>=6.0,<7.0
 Pillow>=10,<13
 
-# The web server additionally needs Flask (the HTML/CSS/JS frontend has no build step).
-Flask>=3.0,<4.0
+# The web server uses FastAPI (the HTML/CSS/JS frontend has no build step).
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.29,<1.0
+jinja2>=3.1,<4.0
+python-multipart>=0.0.9,<1.0
+# Moteur Fish Audio (clonage zero-shot, palier gratuit s2.1-pro-free) :
+# la reference vocale est envoyee en MessagePack sur POST /v1/tts.
+ormsgpack>=2.0

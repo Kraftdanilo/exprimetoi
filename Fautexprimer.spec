@@ -9,7 +9,7 @@ from PyInstaller.utils.hooks import collect_all
 ROOT = Path(SPECPATH)
 ICON = ROOT / "assets" / "fautexprimer.ico"
 if not ICON.is_file():
-    raise SystemExit("assets/fautexprimer.ico est introuvable; lancez tools/generate_icon.py.")
+    raise SystemExit("assets/fautexprimer.ico est introuvable; lancez tools/icon_builder.py.")
 FFMPEG = shutil.which("ffmpeg")
 if not FFMPEG:
     raise SystemExit("ffmpeg est introuvable dans le PATH; installez-le avant le build.")
@@ -17,9 +17,18 @@ if not FFMPEG:
 datas = [(str(ROOT / "webapp"), "webapp")]
 binaries = [(FFMPEG, "tools")]
 hiddenimports = [
-    "Google_Gemini_Live_TTS",
-    "history_store",
+    "tts_engines",
+    "history_db",
     "sqlite3",
+    "uvicorn",
+    "uvicorn.logging",
+    "uvicorn.loops.auto",
+    "uvicorn.loops.asyncio",
+    "uvicorn.protocols.http.auto",
+    "uvicorn.protocols.http.h11_impl",
+    "uvicorn.protocols.websockets.auto",
+    "uvicorn.lifespan.on",
+    "anyio._backends._asyncio",
     "clr",
     "webview.platforms.winforms",
     "webview.platforms.edgechromium",
@@ -33,14 +42,14 @@ for package in ("edge_tts", "google.genai"):
     hiddenimports += package_hidden
 
 # Evite d'embarquer des runtimes graphiques et du materiel inutilises par le
-# backend Flask et le backend PyWebView Edge.
+# backend FastAPI et le backend PyWebView Edge.
 excludes = [
     "PyQt5", "PyQt6", "PySide2", "PySide6", "gtk", "cefpython",
     "tkinter", "pyaudio", "PIL", "PIL.*", "pytest", "IPython",
 ]
 
 a = Analysis(
-    [str(ROOT / "desktop_app.py")],
+    [str(ROOT / "desktop_launcher.py")],
     pathex=[str(ROOT)],
     binaries=binaries,
     datas=datas,

@@ -1,8 +1,8 @@
-"""Point d'entrée de l'application de bureau Fautexprimer.
+"""Point d'entr�e de l'application de bureau Fautexprimer.
 
-Flask reste le backend local ; PyWebView affiche le même frontend dans une
-fenêtre Windows native. Le port est choisi automatiquement pour éviter tout
-conflit avec une autre application locale.
+FastAPI (via uvicorn) sert de backend local ; PyWebView affiche le m�me
+frontend dans une fen�tre Windows native. Le port est choisi automatiquement
+pour �viter tout conflit avec une autre application locale.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import time
 import urllib.request
 from pathlib import Path
 
@@ -18,7 +19,7 @@ from webview import settings as webview_settings
 
 
 def _configure_bundled_ffmpeg() -> None:
-    """Expose le binaire FFmpeg embarqué dans le PATH de l'EXE."""
+    """Expose le binaire FFmpeg embarqu� dans le PATH de l'EXE."""
     if not getattr(sys, "frozen", False):
         return
     resource_dir = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
@@ -30,18 +31,25 @@ def _configure_bundled_ffmpeg() -> None:
 
 _configure_bundled_ffmpeg()
 
-import server  # noqa: E402
+import web_server  # noqa: E402
 
 
 def main() -> int:
-    http_server = server.create_http_server("127.0.0.1", 0)
-    port = http_server.server_port
+    http_server = web_server.create_http_server("127.0.0.1", 0)
+    port = http_server.config.port
     server_thread = threading.Thread(
-        target=http_server.serve_forever,
-        name="fautexprimer-flask",
+        target=http_server.run,
+        name="fautexprimer-uvicorn",
         daemon=True,
     )
     server_thread.start()
+
+    # Attendre que le serveur soit pr�t � accepter les connexions.
+    deadline = time.monotonic() + 15
+    while not http_server.started:
+        if time.monotonic() > deadline:
+            raise RuntimeError("Le serveur uvicorn n'a pas d�marr� dans le d�lai imparti.")
+        time.sleep(0.05)
 
     url = f"http://127.0.0.1:{port}/"
     if os.environ.get("FAUTEXPRIMER_SMOKE_TEST") == "1":
@@ -54,12 +62,11 @@ def main() -> int:
                     raise RuntimeError(f"API health : HTTP {response.status}")
             return 0
         finally:
-            http_server.shutdown()
-            http_server.server_close()
+            http_server.should_exit = True
             server_thread.join(timeout=5)
 
     webview.create_window(
-        "Fautexprimer — Eben · Dane · Michel",
+        "Fautexprimer � Gemini � Edge � MiMo",
         url,
         width=1280,
         height=900,
@@ -69,19 +76,18 @@ def main() -> int:
         text_select=True,
     )
     try:
-        # Les liens audio doivent pouvoir declencher la boite de dialogue
+        # Les liens audio doivent pouvoir d�clencher la bo�te de dialogue
         # d'enregistrement de Windows. Le cache reste persistant hors du bundle.
         webview_settings["ALLOW_DOWNLOADS"] = True
         webview.start(
             debug=False,
             private_mode=False,
-            storage_path=str(server.runtime_dir() / "webview"),
+            storage_path=str(web_server.runtime_dir() / "webview"),
         )
     finally:
-        http_server.shutdown()
-        http_server.server_close()
+        http_server.should_exit = True
         server_thread.join(timeout=5)
-        server.shutdown_engines()
+        web_server.shutdown_engines()
     return 0
 
 

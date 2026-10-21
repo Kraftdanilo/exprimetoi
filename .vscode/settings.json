@@ -1,7 +1,0 @@
-    "python.defaultInterpreterPath": "${workspaceFolder}/venv/Scripts/python.exe",
-    "python.analysis.extraPaths": [
-        "${workspaceFolder}/venv/Lib/site-packages"
-    ],
-    "python.analysis.typeCheckingMode": "basic",
-    "python.analysis.diagnosticMode": "workspace",
-    "python.analysis.reportMissingModuleSource": "none"

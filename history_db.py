@@ -142,7 +142,7 @@ class HistoryStore:
                         audio_format.lstrip("."), filename, transcript, reference_voice_id,
                     ),
                 )
-                record_id = int(cursor.lastrowid)
+                record_id = int(cursor.lastrowid or 0)
         except Exception:
             destination.unlink(missing_ok=True)
             raise
@@ -204,45 +204,6 @@ class HistoryStore:
             (self.synthesis_dir / record["filename"]).unlink(missing_ok=True)
         return len(records)
 
-    def add_voice(
-        self,
-        source_path: Path,
-        *,
-        name: str,
-        original_name: str,
-        source: str,
-        audio_format: str,
-    ) -> dict[str, Any]:
-        if source not in {"uploaded", "recorded"}:
-            raise ValueError("Type de voix invalide")
-        source_file = source_path.resolve()
-        if not source_file.is_file():
-            raise FileNotFoundError(source_file)
-        extension = source_file.suffix or f".{audio_format.lstrip('.')}"
-        filename = self._safe_filename("voix", extension)
-        destination = self.voice_dir / filename
-        shutil.copy2(source_file, destination)
-        clean_name = " ".join(name.strip().split())[:120] or Path(original_name).stem[:120]
-        try:
-            with self._connect() as connection:
-                cursor = connection.execute(
-                    """
-                    INSERT INTO voice_library
-                        (created_at, name, original_name, source, filename, format)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        self._now(), clean_name, Path(original_name).name[:255], source,
-                        filename, audio_format.lstrip("."),
-                    ),
-                )
-                record_id = int(cursor.lastrowid)
-        except Exception:
-            destination.unlink(missing_ok=True)
-            raise
-        self._trim_voices()
-        return self.get_voice(record_id)  # type: ignore[return-value]
-
     def add_voice_bytes(
         self,
         audio: bytes,
@@ -275,7 +236,7 @@ class HistoryStore:
                         filename, extension.lstrip("."),
                     ),
                 )
-                record_id = int(cursor.lastrowid)
+                record_id = int(cursor.lastrowid or 0)
         except Exception:
             destination.unlink(missing_ok=True)
             raise

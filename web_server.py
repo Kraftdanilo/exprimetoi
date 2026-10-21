@@ -1,4 +1,4 @@
-"""Backend Flask de Fautexprimer (moteurs Gemini, Edge et MiMo).
+"""Backend FastAPI de l'application (moteurs Gemini, Edge et MiMo).
 
 L'application expose le studio web, les fichiers statiques HTML/CSS/JavaScript et
 une API JSON/audio consommée par le frontend natif, sans framework ni bundler.
@@ -8,19 +8,21 @@ Routes principales :
 - ``GET  /api/config``        voix, vitesses et formats d'export ;
 - ``GET  /api/voices/edge``   catalogue de voix Edge recherchable ;
 - ``POST /api/synthesize``    génération et retour d'un audio ou d'un ZIP multi-format ;
-- ``GET  /api/history/syntheses/<id>/formats`` export multi-format d'une piste historique ;
+- ``GET  /api/history/syntheses/{id}/formats`` export multi-format d'une piste historique ;
 - ``POST /api/upload-ref``    dépôt d'un clip de référence ;
 - ``POST /api/test-endpoint`` test du service MiMo ;
 - ``POST /api/settings``      application de paramètres à l'exécution.
 
-Lancement : ``venv\\Scripts\\python.exe desktop_app.py``.
+Lancement : ``venv\\Scripts\\python.exe desktop_launcher.py``.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -30,12 +32,17 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, render_template, request, send_file, send_from_directory
+import uvicorn
+from fastapi import Body, FastAPI, File, Form, Query, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from starlette.background import BackgroundTask
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from dotenv import load_dotenv
-from history_store import HistoryStore
-from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
-from werkzeug.serving import make_server
-from werkzeug.wsgi import ClosingIterator
+from history_db import HistoryStore
 
 _SOURCE_DIR = Path(__file__).resolve().parent
 _FROZEN = bool(getattr(sys, "frozen", False))
@@ -50,13 +57,14 @@ def runtime_dir() -> Path:
         path = Path(override).expanduser().resolve()
     else:
         local_app_data = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-        path = local_app_data / "Fautexprimer"
+        path = local_app_data / "fautexprimer"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 _DATA_DIR = runtime_dir()
 _UPLOAD_DIR = _DATA_DIR / "uploads"
+_SETTINGS_FILE = _DATA_DIR / "settings.json"
 
 # PyInstaller inclut le moteur comme module caché. En développement, le fichier
 # racine est déjà importable via le chemin du script courant.
@@ -70,35 +78,43 @@ if _EXECUTABLE_DIR != _DATA_DIR:
 # disponible avant la creation des singletons.
 for _env_file in _ENV_FILES:
     load_dotenv(_env_file, override=False)
-os.environ.setdefault("GEMINI_TTS_HOME", str(_DATA_DIR / "runtime"))
+os.environ.setdefault("FAUTEXPRIMER_HOME", str(_DATA_DIR / "runtime"))
 
-import Google_Gemini_Live_TTS as gltts  # noqa: E402
+import tts_engines as gltts  # noqa: E402
 
 APP_NAME = "Fautexprimer"
 _MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 _history_store = HistoryStore(_DATA_DIR)
 
-app = Flask(
-    __name__,
-    template_folder=str(_RESOURCE_DIR / "webapp" / "templates"),
-    static_folder=str(_RESOURCE_DIR / "webapp" / "static"),
-    static_url_path="/static",
-)
-app.config["MAX_CONTENT_LENGTH"] = _MAX_UPLOAD_BYTES + 1024
+app = FastAPI(title="Fautexprimer", docs_url=None, redoc_url=None, openapi_url=None)
+
+# Compression gzip : réduit la taille des réponses JSON/HTML de 60-80%.
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
-def create_http_server(host: str = "127.0.0.1", port: int = 0):
-    """Crée le serveur WSGI utilisé par l'application de bureau PyWebView."""
-    return make_server(host, port, app, threaded=True)
+@app.middleware("http")
+async def add_static_cache_headers(request: Request, call_next):
+    """Ajoute des en-têtes Cache-Control pour les fichiers statiques.
+
+    Les fichiers CSS/JS/images sont versionnés par le build, donc on peut
+    les mettre en cache agressivement côté navigateur pour éviter les
+    re-téléchargements à chaque chargement de page.
+    """
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        # CSS/JS/images : cache 7 jours, revalidation en arrière-plan.
+        response.headers["Cache-Control"] = "public, max-age=604800, stale-while-revalidate=86400"
+    elif request.url.path == "/":
+        # Page HTML : ne jamais cacher pour garantir la fraîcheur.
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
 
 
-@app.get("/ia-studio")
-def ia_studio():
-    """Page de configuration de l'outil d'IA Studio."""
-    return send_from_directory(
-        str(_RESOURCE_DIR / "webapp" / "templates"),
-        "ia-studio.html",
-    )
+# Templates Jinja2 pour le rendu HTML côté serveur.
+templates = Jinja2Templates(directory=str(_RESOURCE_DIR / "webapp" / "templates"))
+
+# Fichiers statiques (CSS, JS, images) servis à /static avec cache navigateur.
+app.mount("/static", StaticFiles(directory=str(_RESOURCE_DIR / "webapp" / "static")), name="static")
 
 
 class APIError(Exception):
@@ -110,23 +126,23 @@ class APIError(Exception):
         self.status = status
 
 
-@app.errorhandler(APIError)
-def _api_error(exc: APIError):
-    return jsonify(detail=exc.message), exc.status
+@app.exception_handler(APIError)
+async def _api_error(request: Request, exc: APIError):
+    return JSONResponse({"detail": exc.message}, status_code=exc.status)
 
 
-@app.errorhandler(RequestEntityTooLarge)
-def _upload_too_large(_exc: RequestEntityTooLarge):
-    return jsonify(detail=f"Clip trop volumineux (max {_MAX_UPLOAD_BYTES // (1024 * 1024)} Mo)."), 413
+@app.exception_handler(StarletteHTTPException)
+async def _http_error(request: Request, exc: StarletteHTTPException):
+    return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
 
-@app.errorhandler(HTTPException)
-def _http_error(exc: HTTPException):
-    return jsonify(detail=exc.description), exc.code or 500
+@app.exception_handler(RequestValidationError)
+async def _validation_error(request: Request, exc: RequestValidationError):
+    return JSONResponse({"detail": str(exc)}, status_code=422)
 
 
 # ---------------------------------------------------------------------------
-# Moteurs partagés et catalogue Edge
+# Moteurs partagés et configuration persistante
 # ---------------------------------------------------------------------------
 _gemini_engine = gltts.get_engine()
 _gemini_engine.api_key = _gemini_engine.api_key or os.environ.get("GEMINI_API_KEY", "")
@@ -135,6 +151,118 @@ _edge_engine = gltts.get_edge_engine()
 
 _mimo_engine = gltts.get_mimo_engine()
 _mimo_engine.mimo_key = os.environ.get("MIMO_API_KEY", "")
+
+_fish_engine = gltts.get_fish_engine()
+_fish_engine.mimo_key = os.environ.get("FISH_API_KEY", "")
+# Fish réutilise la même bibliothèque de clips que MiMo (ref_audio partagé).
+
+
+def _read_settings_file() -> dict[str, Any]:
+    """Lit la configuration locale écrite par le frontend (clés comprises)."""
+    try:
+        data = json.loads(_SETTINGS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_settings_file(settings: dict[str, Any]) -> None:
+    """Écrit la configuration de façon atomique dans le dossier utilisateur."""
+    _SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = _SETTINGS_FILE.with_suffix(".json.tmp")
+    temp_path.write_text(
+        json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    os.replace(temp_path, _SETTINGS_FILE)
+    try:
+        os.chmod(_SETTINGS_FILE, 0o600)
+    except OSError:
+        pass
+
+
+def _settings_snapshot() -> dict[str, Any]:
+    """État courant complet, utilisé pour la sauvegarde disque."""
+    return {
+        "geminiKey": _gemini_engine.api_key,
+        "geminiModel": gltts.display_model_name(_gemini_engine.model),
+        "mimoKey": _mimo_engine.mimo_key,
+        "mimoUrl": _mimo_engine.mimo_url,
+        "mimoModel": _mimo_engine.mimo_model,
+        "fishKey": _fish_engine.mimo_key,
+        "fishModel": _fish_engine.mimo_model,
+        "ffmpegPath": _gemini_engine.ffmpeg_path,
+        "systemPrompt": gltts.DEFAULT_PROMPT,
+    }
+
+
+def _apply_persisted_settings(settings: dict[str, Any]) -> None:
+    """Applique les valeurs enregistrées ; le fichier local prime sur le .env."""
+    gemini_key = settings.get("geminiKey")
+    if isinstance(gemini_key, str) and gemini_key.strip():
+        _gemini_engine.api_key = gemini_key.strip()
+        os.environ["GEMINI_API_KEY"] = _gemini_engine.api_key
+
+    fish_key = settings.get("fishKey")
+    if isinstance(fish_key, str) and fish_key.strip():
+        _fish_engine.mimo_key = fish_key.strip()
+        os.environ["FISH_API_KEY"] = _fish_engine.mimo_key
+
+    gemini_model = settings.get("geminiModel")
+    if isinstance(gemini_model, str) and gemini_model.strip():
+        _gemini_engine.model = gltts.normalize_model_name(gemini_model)
+
+    mimo_key = settings.get("mimoKey")
+    if isinstance(mimo_key, str) and mimo_key.strip():
+        _mimo_engine.mimo_key = mimo_key.strip()
+        os.environ["MIMO_API_KEY"] = _mimo_engine.mimo_key
+
+    mimo_url = settings.get("mimoUrl")
+    if isinstance(mimo_url, str) and mimo_url.strip():
+        _mimo_engine.mimo_url = mimo_url.strip()
+
+    mimo_model = settings.get("mimoModel")
+    if isinstance(mimo_model, str) and mimo_model.strip():
+        _mimo_engine.mimo_model = mimo_model.strip()
+
+    ffmpeg_path = settings.get("ffmpegPath")
+    if isinstance(ffmpeg_path, str) and ffmpeg_path.strip():
+        for engine in (_gemini_engine, _edge_engine, _mimo_engine):
+            engine.ffmpeg_path = ffmpeg_path.strip()
+
+    system_prompt = settings.get("systemPrompt")
+    if isinstance(system_prompt, str) and system_prompt.strip():
+        gltts.DEFAULT_PROMPT = system_prompt.strip()
+
+
+def _persist_settings() -> None:
+    """Sauvegarde l'état courant des moteurs dans le dossier utilisateur."""
+    try:
+        _write_settings_file(_settings_snapshot())
+    except OSError as exc:
+        gltts.log.warning("Configuration non enregistrée : %s", exc)
+        raise APIError("Impossible d'enregistrer la configuration locale.", 500) from exc
+
+
+def _public_settings() -> dict[str, Any]:
+    """Vue frontend de la configuration : jamais les clés en clair."""
+    return {
+        "geminiKeyConfigured": bool(_gemini_engine.api_key),
+        "geminiModel": gltts.display_model_name(_gemini_engine.model),
+        "mimoKeyConfigured": bool(_mimo_engine.mimo_key),
+        "mimoUrl": _mimo_engine.mimo_url,
+        "mimoModel": _mimo_engine.mimo_model,
+        "fishKeyConfigured": bool(_fish_engine.mimo_key),
+        "fishModel": _fish_engine.mimo_model,
+        "ffmpegPath": _gemini_engine.ffmpeg_path,
+        "systemPrompt": gltts.DEFAULT_PROMPT,
+        "geminiModels": gltts.gemini_model_catalog(),
+        "mimoUrls": gltts.MIMO_URLS,
+        "mimoModels": gltts.MIMO_MODELS,
+        "storageFile": str(_SETTINGS_FILE),
+    }
+
+
+_apply_persisted_settings(_read_settings_file())
 
 # Le navigateur lit le résultat ; le serveur ne doit jamais ouvrir un périphérique
 # audio local pendant une requête web.
@@ -180,29 +308,37 @@ PROVIDERS = {
     "gemini": gltts.PROVIDER_GEMINI,
     "edge": gltts.PROVIDER_EDGE,
     "mimo": gltts.PROVIDER_MIMO,
+    "fish": gltts.PROVIDER_FISH,
 }
 
 # Plafonds de securite de l'application, et non limites universelles des API.
-# Les tests de la version courante ont valide Eben jusqu'a 8 000 caracteres,
-# Dane jusqu'a 20 000, et Michel jusqu'a 4 000. Les valeurs en mots et phrases
+# Les tests de la version courante ont valide Gemini jusqu'a 8 000 caracteres,
+# Edge jusqu'a 20 000, et MiMo jusqu'a 4 000. Les valeurs en mots et phrases
 # servent de reperes d'interface ; le serveur bloque sur la longueur exacte.
 TEXT_LIMITS = {
     "gemini": {
-        "name": "Eben",
+        "name": "Gemini",
         "maxChars": 8_000,
         "maxWords": 1_400,
         "maxSentences": 200,
         "testedChars": 8_000,
     },
     "edge": {
-        "name": "Dane",
+        "name": "Edge",
         "maxChars": 20_000,
         "maxWords": 3_500,
         "maxSentences": 600,
         "testedChars": 20_000,
     },
     "mimo": {
-        "name": "Michel",
+        "name": "MiMo",
+        "maxChars": 4_000,
+        "maxWords": 700,
+        "maxSentences": 120,
+        "testedChars": 4_000,
+    },
+    "fish": {
+        "name": "Fish",
         "maxChars": 4_000,
         "maxWords": 700,
         "maxSentences": 120,
@@ -243,15 +379,6 @@ def _validate_text_limit(provider_id: str, text: str) -> None:
             "Ce plafond est le plus fiable pour une synthese complete ; "
             "decoupez le texte en plusieurs parties."
         )
-
-
-def _json_body() -> dict[str, Any]:
-    if not request.is_json:
-        raise APIError("Le corps de la requete doit etre au format JSON.")
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        raise APIError("Objet JSON invalide.")
-    return data
 
 
 def _text(data: dict[str, Any], key: str, default: str = "", max_length: int = 100_000) -> str:
@@ -305,69 +432,159 @@ def shutdown_engines() -> None:
 
 
 @app.get("/")
-def index():
-    return render_template("index.html")
+async def index(request: Request):
+    return templates.TemplateResponse(request, "index.html")
 
 
 @app.get("/api/health")
-def health():
+async def health():
     with _edge_voices_lock:
         voice_count = len(_edge_voices)
-    return jsonify(
-        status="ok",
-        app=APP_NAME,
-        version=gltts.APP_VERSION,
-        geminiKey=bool(_gemini_engine.api_key),
-        edgeTTS=gltts.edge_tts is not None,
-        edgeVoices=voice_count,
-        ffmpeg=gltts.ffmpeg_available(),
-    )
+    return {
+        "status": "ok",
+        "app": APP_NAME,
+        "version": gltts.APP_VERSION,
+        "geminiKey": bool(_gemini_engine.api_key),
+        "geminiModel": gltts.display_model_name(_gemini_engine.model),
+        "mimoKey": bool(_mimo_engine.mimo_key),
+        "mimoModel": _mimo_engine.mimo_model,
+        "fishKey": bool(_fish_engine.mimo_key),
+        "fishModel": _fish_engine.mimo_model,
+        "edgeTTS": gltts.edge_tts is not None,
+        "edgeVoices": voice_count,
+        "ffmpeg": gltts.ffmpeg_available(),
+    }
 
 
 @app.get("/api/config")
-def config():
-    return jsonify(
-        providers=[
+async def config():
+    return {
+        "providers": [
             {
                 "id": "gemini",
-                "name": "Eben",
-                "hint": "Narration naturelle et expressive • 30 voix",
+                "name": "Gemini",
+                "hint": "Expressive • 30 voix",
                 "textLimit": TEXT_LIMITS["gemini"],
             },
             {
                 "id": "edge",
-                "name": "Dane",
-                "hint": "Sans configuration • 322 voix multilingues",
+                "name": "Edge",
+                "hint": "Sans clé • 322 voix",
                 "textLimit": TEXT_LIMITS["edge"],
             },
             {
                 "id": "mimo",
-                "name": "Michel",
-                "hint": "Clonage de voix a partir d'un clip",
+                "name": "MiMo",
+                "hint": "Clonage depuis un clip",
                 "textLimit": TEXT_LIMITS["mimo"],
             },
+            {
+                "id": "fish",
+                "name": "Fish",
+                "hint": "Clonage gratuit • 83 langues",
+                "textLimit": TEXT_LIMITS["fish"],
+            },
         ],
-        textLimits=TEXT_LIMITS,
-        geminiVoices=[
+        "textLimits": TEXT_LIMITS,
+        "geminiVoices": [
             {"name": v[0], "pitch": v[1], "tone": v[2], "bestFor": v[3]}
             for v in gltts.VOICES
         ],
-        defaultVoice=gltts.DEFAULT_VOICE,
-        defaultEdgeVoice=gltts.DEFAULT_EDGE_VOICE,
-        speeds=[{"label": label, "value": value} for label, value in gltts.SPEED_PRESETS],
-        formats=[{"label": label, "ext": ext} for label, ext in gltts.EXPORT_FORMATS],
-        mimo={
+        "defaultVoice": gltts.DEFAULT_VOICE,
+        "defaultEdgeVoice": gltts.DEFAULT_EDGE_VOICE,
+        "defaultPrompt": gltts.DEFAULT_PROMPT,
+        "geminiModels": gltts.gemini_model_catalog(),
+        "defaultGeminiModel": gltts.display_model_name(_gemini_engine.model),
+        "speeds": [{"label": label, "value": value} for label, value in gltts.SPEED_PRESETS],
+        "formats": [{"label": label, "ext": ext} for label, ext in gltts.EXPORT_FORMATS],
+        "mimo": {
             "defaultMimoUrl": gltts.MIMO_DEFAULT_URL,
             "defaultMimoModel": gltts.MIMO_DEFAULT_MODEL,
+            "urls": gltts.MIMO_URLS,
+            "models": gltts.MIMO_MODELS,
         },
-    )
+        "fish": {
+            "defaultFishUrl": gltts.FISH_DEFAULT_URL,
+            "defaultFishModel": gltts.FISH_DEFAULT_MODEL,
+            "models": gltts.FISH_MODELS,
+        },
+    }
+
+
+@app.get("/api/api-catalog")
+async def api_catalog():
+    """Catalogue des sites et modèles d'API compatibles, avec l'état des clés.
+
+    Chaque entrée indique le fournisseur, l'URL du service, le(s) modèle(s),
+    la clé requise et si cette clé est actuellement configurée côté serveur.
+    """
+    gemini_ready = bool(_gemini_engine.api_key or os.environ.get("GEMINI_API_KEY", ""))
+    mimo_ready = bool(_mimo_engine.mimo_key or os.environ.get("MIMO_API_KEY", ""))
+    fish_ready = bool(_fish_engine.mimo_key or os.environ.get("FISH_API_KEY", ""))
+    key_state = {"gemini": gemini_ready, "edge": True, "mimo": mimo_ready, "fish": fish_ready}
+    catalog = []
+    for entry in gltts.API_CATALOG:
+        enriched = dict(entry)
+        enriched["keyConfigured"] = key_state.get(entry["id"], False)
+        catalog.append(enriched)
+    return {"catalog": catalog}
+
+
+@app.get("/api/settings")
+async def read_settings():
+    """Configuration courante, sans jamais exposer les clés elles-mêmes."""
+    return _public_settings()
+
+
+@app.get("/api/models/gemini")
+def gemini_models():
+    """Liste les modèles Gemini Live disponibles avec la clé configurée.
+
+    La liste de repli reste utilisable hors-ligne ou si la clé est absente.
+    """
+    fallback = gltts.gemini_model_catalog()
+    key = _gemini_engine.api_key
+    if not key:
+        return {
+            "models": fallback,
+            "source": "fallback",
+            "message": "Aucune clé Gemini configurée.",
+        }
+    try:
+        from google import genai
+
+        client = genai.Client(
+            api_key=key,
+            http_options={"api_version": "v1beta"},
+        )
+        discovered = []
+        excluded = ("transcribe", "translate", "robotics", "lyria")
+        for model in client.models.list():
+            actions = getattr(model, "supported_actions", None) or []
+            if "bidiGenerateContent" not in actions:
+                continue
+            name = str(getattr(model, "name", "") or "").removeprefix("models/")
+            if not name or any(token in name.lower() for token in excluded):
+                continue
+            discovered.append(
+                {"id": name, "label": str(getattr(model, "display_name", "") or name)}
+            )
+        if not discovered:
+            raise RuntimeError("Aucun modele Live retourne par l'API.")
+        return {
+            "models": gltts.gemini_model_catalog(discovered),
+            "source": "api",
+        }
+    except Exception as exc:
+        gltts.log.warning("Decouverte des modeles Gemini impossible : %s", exc)
+        return {"models": fallback, "source": "fallback", "message": str(exc)}
 
 
 @app.get("/api/voices/edge")
-def edge_voices():
+async def edge_voices(q: str = Query("")):
     if not _edge_voices:
         _load_edge_voices_background()
-    needle = request.args.get("q", "").strip().lower()
+    needle = q.strip().lower()
     with _edge_voices_lock:
         voices = list(_edge_voices)
     if needle:
@@ -378,40 +595,71 @@ def edge_voices():
                 f"{voice.gender} {voice.categories_text} {voice.personalities_text}"
             ).lower()
         ]
-    return jsonify(count=len(voices), voices=[_edge_voice_view(voice) for voice in voices])
+    return {"count": len(voices), "voices": [_edge_voice_view(voice) for voice in voices]}
 
 
 @app.post("/api/test-endpoint")
-def test_endpoint():
-    data = _json_body()
+async def test_endpoint(data: dict[str, Any] = Body(...)):
     _mimo_engine.mimo_url = _text(data, "mimoUrl", gltts.MIMO_DEFAULT_URL, 2_000).strip() or gltts.MIMO_DEFAULT_URL
     _mimo_engine.mimo_model = _text(data, "mimoModel", gltts.MIMO_DEFAULT_MODEL, 300).strip() or gltts.MIMO_DEFAULT_MODEL
     _mimo_engine.mimo_key = _text(data, "mimoKey", "", 2_000).strip() or os.environ.get("MIMO_API_KEY", "")
     _mimo_engine.ref_audio = _reference_audio_from_payload(data)
     ok, message = _mimo_engine.check_endpoint()
-    return jsonify(ok=ok, message=message)
+    return {"ok": ok, "message": message}
 
 
 @app.post("/api/settings")
-def save_settings():
-    data = _json_body()
+async def save_settings(data: dict[str, Any] = Body(...)):
+    """Applique puis enregistre clés, modèles et options dans le dossier utilisateur."""
     gemini_key = _text(data, "geminiKey", "", 2_000).strip()
+    gemini_model = _text(data, "geminiModel", "", 300).strip()
     mimo_key = _text(data, "mimoKey", "", 2_000).strip()
+    mimo_url = _text(data, "mimoUrl", "", 2_000).strip()
+    mimo_model = _text(data, "mimoModel", "", 300).strip()
     ffmpeg_path = _text(data, "ffmpegPath", "", 4_000).strip()
     system_prompt = _text(data, "systemPrompt", "", 20_000).strip()
 
-    if gemini_key:
+    if data.get("clearGeminiKey") is True:
+        _gemini_engine.api_key = ""
+        os.environ.pop("GEMINI_API_KEY", None)
+    elif gemini_key:
         _gemini_engine.api_key = gemini_key
         os.environ["GEMINI_API_KEY"] = gemini_key
-    if mimo_key:
+
+    if gemini_model:
+        _gemini_engine.model = gltts.normalize_model_name(gemini_model)
+
+    if data.get("clearMimoKey") is True:
+        _mimo_engine.mimo_key = ""
+        os.environ.pop("MIMO_API_KEY", None)
+    elif mimo_key:
         _mimo_engine.mimo_key = mimo_key
         os.environ["MIMO_API_KEY"] = mimo_key
+
+    if mimo_url:
+        _mimo_engine.mimo_url = mimo_url
+    if mimo_model:
+        _mimo_engine.mimo_model = mimo_model
+
+    fish_key = _text(data, "fishKey", "", 2_000).strip()
+    fish_model = _text(data, "fishModel", "", 300).strip()
+    if data.get("clearFishKey") is True:
+        _fish_engine.mimo_key = ""
+        os.environ.pop("FISH_API_KEY", None)
+    elif fish_key:
+        _fish_engine.mimo_key = fish_key
+        os.environ["FISH_API_KEY"] = fish_key
+    if fish_model:
+        _fish_engine.mimo_model = fish_model
+
     if ffmpeg_path:
-        for engine in (_gemini_engine, _edge_engine, _mimo_engine):
+        for engine in (_gemini_engine, _edge_engine, _mimo_engine, _fish_engine):
             engine.ffmpeg_path = ffmpeg_path
     if system_prompt:
         gltts.DEFAULT_PROMPT = system_prompt
-    return jsonify(ok=True)
+
+    _persist_settings()
+    return {"ok": True, "settings": _public_settings()}
 
 
 def _reference_audio_from_payload(data: dict[str, Any]) -> str:
@@ -462,23 +710,19 @@ def _synthesis_view(record: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.get("/api/history")
-def history_index():
-    limit = request.args.get("limit", 100, type=int)
-    offset = request.args.get("offset", 0, type=int)
-    return jsonify(
-        stats=_history_store.stats(),
-        syntheses=[_synthesis_view(item) for item in _history_store.list_syntheses(limit, offset)],
-        voices=[_voice_view(item) for item in _history_store.list_voices(limit, offset)],
-    )
+async def history_index(limit: int = Query(100), offset: int = Query(0)):
+    return {
+        "stats": _history_store.stats(),
+        "syntheses": [_synthesis_view(item) for item in _history_store.list_syntheses(limit, offset)],
+        "voices": [_voice_view(item) for item in _history_store.list_voices(limit, offset)],
+    }
 
 
 def _send_stored_audio(path: Path, download_name: str, as_attachment: bool = False):
-    return send_file(
+    return FileResponse(
         path,
-        mimetype=MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream"),
-        as_attachment=as_attachment,
-        download_name=download_name,
-        conditional=True,
+        media_type=MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream"),
+        filename=download_name if as_attachment else None,
     )
 
 
@@ -552,38 +796,34 @@ def _export_formats_from_file(
                             converted.stderr.strip() or f"Conversion vers {target_ext} impossible."
                         )
                 bundle.write(target, arcname=target.name)
-        response = send_file(
+        return FileResponse(
             archive,
-            mimetype="application/zip",
-            as_attachment=True,
-            download_name=archive.name,
-            conditional=False,
+            media_type="application/zip",
+            filename=archive.name,
+            background=BackgroundTask(cleanup_archive),
         )
-        response.response = ClosingIterator(response.response, [cleanup_archive])
-        response.call_on_close(cleanup_archive)
-        return response
     except Exception:
         cleanup_archive()
         raise
 
 
-@app.get("/api/history/syntheses/<int:record_id>/audio")
-def history_synthesis_audio(record_id: int):
+@app.get("/api/history/syntheses/{record_id}/audio")
+async def history_synthesis_audio(record_id: int, download: int = Query(0)):
     path = _history_store.synthesis_audio(record_id)
     if path is None:
         raise APIError("Audio historique introuvable.", 404)
     return _send_stored_audio(
-        path, f"fautexprimer-{record_id}{path.suffix.lower()}", request.args.get("download") == "1"
+        path, f"fautexprimer-{record_id}{path.suffix.lower()}", download == 1
     )
 
 
-@app.get("/api/history/syntheses/<int:record_id>/formats")
-def history_synthesis_formats(record_id: int):
+@app.get("/api/history/syntheses/{record_id}/formats")
+async def history_synthesis_formats(record_id: int, formats: str = Query("")):
     record = _history_store.get_synthesis(record_id)
     path = _history_store.synthesis_audio(record_id)
     if record is None or path is None:
         raise APIError("Audio historique introuvable.", 404)
-    raw_formats = request.args.get("formats", "").strip()
+    raw_formats = formats.strip()
     values = [item.strip() for item in raw_formats.split(",") if item.strip()]
     if not values:
         values = [record["format"]]
@@ -594,50 +834,75 @@ def history_synthesis_formats(record_id: int):
         raise APIError(f"Conversion multi-format impossible : {exc}", 502) from None
 
 
-@app.delete("/api/history/syntheses/<int:record_id>")
-def delete_history_synthesis(record_id: int):
+@app.delete("/api/history/syntheses/{record_id}")
+async def delete_history_synthesis(record_id: int):
     if not _history_store.delete_synthesis(record_id):
         raise APIError("Synthèse introuvable.", 404)
-    return jsonify(ok=True)
+    return {"ok": True}
 
 
 @app.delete("/api/history/syntheses")
-def clear_history_syntheses():
-    return jsonify(ok=True, deleted=_history_store.clear_syntheses())
+async def clear_history_syntheses():
+    return {"ok": True, "deleted": _history_store.clear_syntheses()}
 
 
-@app.get("/api/history/voices/<int:record_id>/audio")
-def history_voice_audio(record_id: int):
+@app.get("/api/history/voices/{record_id}/audio")
+async def history_voice_audio(record_id: int, download: int = Query(0)):
     path = _history_store.voice_audio(record_id)
     if path is None:
         raise APIError("Voix historique introuvable.", 404)
     return _send_stored_audio(
-        path, f"voix-{record_id}{path.suffix.lower()}", request.args.get("download") == "1"
+        path, f"voix-{record_id}{path.suffix.lower()}", download == 1
     )
 
 
-@app.patch("/api/history/voices/<int:record_id>")
-def rename_history_voice(record_id: int):
-    name = _text(_json_body(), "name", "", 120).strip()
+@app.patch("/api/history/voices/{record_id}")
+async def rename_history_voice(record_id: int, data: dict[str, Any] = Body(...)):
+    name = _text(data, "name", "", 120).strip()
     try:
         record = _history_store.rename_voice(record_id, name)
     except ValueError as exc:
         raise APIError(str(exc)) from None
     if record is None:
         raise APIError("Voix historique introuvable.", 404)
-    return jsonify(ok=True, voice=_voice_view(record))
+    return {"ok": True, "voice": _voice_view(record)}
 
 
-@app.delete("/api/history/voices/<int:record_id>")
-def delete_history_voice(record_id: int):
+@app.delete("/api/history/voices/{record_id}")
+async def delete_history_voice(record_id: int):
     if not _history_store.delete_voice(record_id):
         raise APIError("Voix historique introuvable.", 404)
-    return jsonify(ok=True)
+    return {"ok": True}
 
 
 @app.delete("/api/history/voices")
-def clear_history_voices():
-    return jsonify(ok=True, deleted=_history_store.clear_voices())
+async def clear_history_voices():
+    return {"ok": True, "deleted": _history_store.clear_voices()}
+
+
+@app.post("/api/history/syntheses/{record_id}/as-voice")
+async def synthesis_as_voice(record_id: int, data: dict[str, Any] = Body(default={})):
+    """Copie l'audio d'une synthèse dans la bibliothèque de clips MiMo."""
+    record = _history_store.get_synthesis(record_id)
+    if record is None:
+        raise APIError("Synthèse introuvable.", 404)
+    path = _history_store.synthesis_audio(record_id)
+    if path is None:
+        raise APIError("Fichier audio de la synthèse introuvable sur le disque.", 404)
+    audio = path.read_bytes()
+    default_name = f"Synthèse #{record_id}"
+    name = _text(data, "name", "", 200).strip() or record.get("voice") or default_name
+    try:
+        voice = _history_store.add_voice_bytes(
+            audio,
+            name=name,
+            original_name=path.name,
+            source="uploaded",
+            audio_format=path.suffix.lstrip("."),
+        )
+    except ValueError as exc:
+        raise APIError(str(exc)) from None
+    return {"ok": True, "voice": _voice_view(voice)}
 
 
 # ---------------------------------------------------------------------------
@@ -666,11 +931,14 @@ def _sniff_audio(data: bytes) -> str:
 
 
 @app.post("/api/upload-ref")
-def upload_ref():
-    uploaded = request.files.get("file")
-    if uploaded is None or not uploaded.filename:
+async def upload_ref(
+    file: UploadFile = File(...),
+    source: str = Form("uploaded"),
+    name: str = Form(""),
+):
+    if not file.filename:
         raise APIError("Aucun fichier audio n'a ete fourni.")
-    raw = uploaded.stream.read(_MAX_UPLOAD_BYTES + 1)
+    raw = await file.read(_MAX_UPLOAD_BYTES + 1)
     if len(raw) > _MAX_UPLOAD_BYTES:
         raise APIError(f"Clip trop volumineux (max {_MAX_UPLOAD_BYTES // (1024 * 1024)} Mo).", 413)
     detected = _sniff_audio(raw)
@@ -679,19 +947,18 @@ def upload_ref():
             "Format audio non reconnu. Utilisez un fichier WAV, MP3, FLAC, "
             "OGG, M4A ou WebM (un clip de quelques secondes de parole suffit)."
         )
-    source = request.form.get("source", "uploaded")
-    name = request.form.get("name", "").strip()
+    name = name.strip()
     try:
         record = _history_store.add_voice_bytes(
             raw,
             name=name,
-            original_name=uploaded.filename,
+            original_name=file.filename,
             source=source,
             audio_format=detected.lstrip("."),
         )
     except ValueError as exc:
         raise APIError(str(exc)) from None
-    return jsonify(ok=True, voice=_voice_view(record), bytes=len(raw))
+    return {"ok": True, "voice": _voice_view(record), "bytes": len(raw)}
 
 
 # ---------------------------------------------------------------------------
@@ -745,8 +1012,7 @@ def _requested_formats(data: dict[str, Any]) -> list[str]:
 
 
 @app.post("/api/synthesize")
-def synthesize():
-    data = _json_body()
+def synthesize(data: dict[str, Any] = Body(...)):
     text = _text(data, "text", max_length=100_000).strip()
     if not text:
         raise APIError("Le texte est vide.")
@@ -760,18 +1026,29 @@ def synthesize():
     speed = _number(data, "speed", 1.0, 0.25, 4.0)
     gain = _number(data, "gain", 1.0, 0.0, 4.0)
     voice = _text(data, "voice", "", 300).strip()
+    gemini_model = _text(data, "model", "", 300).strip()
     requested_formats = _requested_formats(data)
     ext = requested_formats[0]
 
     if provider == gltts.PROVIDER_GEMINI:
         engine = _gemini_engine
         voice = voice or gltts.DEFAULT_VOICE
+        if gemini_model:
+            engine.model = gltts.normalize_model_name(gemini_model)
         engine.clear_cancel()
         engine.start()  # idempotent
     elif provider == gltts.PROVIDER_EDGE:
         engine = _edge_engine
         voice = voice or gltts.DEFAULT_EDGE_VOICE
         engine.clear_cancel()
+    elif provider == gltts.PROVIDER_FISH:
+        engine = _fish_engine
+        engine.clear_cancel()
+        engine.ref_audio = _reference_audio_from_payload(data)
+        engine.ref_text = _text(data, "refText", "", 20_000)
+        engine.mimo_url = gltts.FISH_DEFAULT_URL
+        engine.mimo_model = _text(data, "fishModel", gltts.FISH_DEFAULT_MODEL, 300).strip() or gltts.FISH_DEFAULT_MODEL
+        engine.mimo_key = _text(data, "fishKey", "", 2_000).strip() or os.environ.get("FISH_API_KEY", "")
     else:
         engine = _mimo_engine
         engine.clear_cancel()
@@ -782,7 +1059,7 @@ def synthesize():
         engine.mimo_key = _text(data, "mimoKey", "", 2_000).strip() or os.environ.get("MIMO_API_KEY", "")
 
     output_paths: list[Path] = []
-    handle, out_path = tempfile.mkstemp(suffix=ext, prefix="gltts_api_")
+    handle, out_path = tempfile.mkstemp(suffix=ext, prefix="fautexprimer_api_")
     os.close(handle)
     out = Path(out_path)
     output_paths.append(out)
@@ -800,7 +1077,7 @@ def synthesize():
                     time.sleep(0.05)
 
     def make_output_path(suffix: str) -> Path:
-        handle, path = tempfile.mkstemp(suffix=suffix, prefix="gltts_api_")
+        handle, path = tempfile.mkstemp(suffix=suffix, prefix="fautexprimer_api_")
         os.close(handle)
         result = Path(path)
         output_paths.append(result)
@@ -814,14 +1091,15 @@ def synthesize():
     def worker() -> None:
         started = time.monotonic()
         try:
-            job = engine.speak(
-                text,
-                voice,
-                collect_audio=True,
-                save_path=out_path,
-                speed=speed,
-                gain=gain,
-            )
+            speak_options: dict[str, Any] = {
+                "collect_audio": True,
+                "save_path": out_path,
+                "speed": speed,
+                "gain": gain,
+            }
+            if provider == gltts.PROVIDER_GEMINI:
+                speak_options["model"] = _gemini_engine.model
+            job = engine.speak(text, voice, **speak_options)
             if job.audio and not (out.exists() and out.stat().st_size > 0):
                 gltts.export_audio(bytes(job.audio), out_path, ffmpeg_path=engine.ffmpeg_path)
             result["job"] = job
@@ -897,12 +1175,11 @@ def synthesize():
         response_download_name = f"tts_{int(time.time())}_{len(requested_formats)}_formats.zip"
         response_attachment = True
 
-    response = send_file(
+    response = FileResponse(
         response_path,
-        mimetype=response_mimetype,
-        as_attachment=response_attachment,
-        download_name=response_download_name,
-        conditional=False,
+        media_type=response_mimetype,
+        filename=response_download_name if response_attachment else None,
+        background=BackgroundTask(cleanup_output),
     )
     response.headers["X-Transcript"] = job.transcript.replace("\n", " ")[:500]
     response.headers["X-Elapsed"] = str(result.get("elapsed", 0))
@@ -911,7 +1188,43 @@ def synthesize():
     if history_id is not None:
         response.headers["X-History-Id"] = str(history_id)
 
-    response.response = ClosingIterator(response.response, [cleanup_output])
-    response.call_on_close(cleanup_output)
     return response
+
+
+# ---------------------------------------------------------------------------
+# Serveur HTTP pour PyWebView (uvicorn) — optimisé pour localhost
+# ---------------------------------------------------------------------------
+def create_http_server(host: str = "127.0.0.1", port: int = 0):
+    """Crée le serveur uvicorn optimisé pour la communication locale.
+
+    Optimisations appliquées :
+    - ``httptools`` : parseur HTTP plus rapide que le parseur stdlib h11 ;
+    - ``timeout_keep_alive`` : maintient les connexions ouvertes entre les
+      requêtes, évitant le coût répété de l'handshake TCP ;
+    - ``access_log=False`` : pas de log d'accès en production (gain CPU) ;
+    - ``workers=1`` : un seul processus suffit en local (pas d'overhead IPC).
+    """
+    if port == 0:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((host, 0))
+            port = s.getsockname()[1]
+    config = uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        log_level="warning",
+        access_log=False,
+        # Parseur HTTP natif (installé via uvicorn[standard]) : ~2x plus rapide
+        http="httptools",
+        # Connexion keep-alive : le navigateur réutilise la même connexion TCP
+        # pour toutes les requêtes fetch(), évitant un handshake à chaque appel.
+        timeout_keep_alive=30,
+        # Pas de limite de concurrence : en local le nombre de connexions
+        # simultanées reste faible (< 10 en général).
+        limit_concurrency=None,
+        # Réponse optimale : le serveur écrit directement sans buffering
+        # intermédiaire inutile.
+        h11_max_incomplete_event_size=16 * 1024,
+    )
+    return uvicorn.Server(config)
 

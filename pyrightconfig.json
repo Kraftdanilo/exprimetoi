@@ -4,10 +4,10 @@ venvPath = "."
 venv = "venv"
 typeCheckingMode = "basic"
 include = [
-    "Google_Gemini_Live_TTS.py",
-    "desktop_app.py",
-    "server.py",
-    "history_store.py",
+    "tts_engines.py",
+    "web_server.py",
+    "desktop_launcher.py",
+    "history_db.py",
     "tools",
 ]
 exclude = [

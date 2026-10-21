@@ -4,7 +4,7 @@ Gemini Live Unlimited Free TTS — Engine library
 
 Text-to-speech engines for Google's Gemini Live, Microsoft Edge TTS and
 Xiaomi MiMo (voice cloning). This reusable engine module is consumed by the
-Flask/PyWebView application in ``server.py``.
+FastAPI/PyWebView application in ``web_server.py``.
 
 Highlights
 ---------
@@ -44,15 +44,15 @@ from typing import Any, Callable, Optional
 # defensively and fall back to a pure-Python implementation so the app keeps
 # working on newer interpreters.
 try:
-    import audioop as _audioop
+    import audioop as _audioop  # type: ignore[no-redef]
 except ImportError:  # Python 3.13+
-    _audioop = None
+    _audioop: Any = None
 
 
 if _audioop is None:
     import array as _array
 
-    class _AudioOpFallback:
+    class _AudioOpFallback:  # type: ignore[no-redef]
         """Minimal drop-in for ``audioop.ratecv`` (16-bit, N-channel, linear)."""
 
         @staticmethod
@@ -83,7 +83,7 @@ if _audioop is None:
                     inter.append(out[i + ch * n_out])
             return inter.tobytes(), state
 
-    _audioop = _AudioOpFallback()
+    _audioop = _AudioOpFallback()  # type: ignore[no-redef]
 
 
 # Lecture locale facultative pour l utilisation directe du module. L'application
@@ -121,9 +121,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-APP_NAME = "GeminiLiveTTS"
+APP_NAME = "Fautexprimer"
 APP_VERSION = "2.0.0"
-APP_DIR = Path(os.environ.get("GEMINI_TTS_HOME", Path.home() / f".{APP_NAME.lower()}"))
+APP_DIR = Path(os.environ.get("FAUTEXPRIMER_HOME", Path.home() / f".{APP_NAME.lower()}"))
 LOG_PATH = APP_DIR / "app.log"
 
 
@@ -159,6 +159,53 @@ FORMAT = pyaudio.paInt16 if pyaudio is not None else PA_INT16
 CHANNELS = 1
 RECEIVE_SAMPLE_RATE = 24000
 MODEL = "models/gemini-3.1-flash-live-preview"
+
+# Modeles Gemini Live proposes dans l'interface. La liste est un repli hors-ligne :
+# le serveur peut aussi interroger l'API Google pour decouvrir les modeles
+# compatibles ``bidiGenerateContent`` avec la cle configuree.
+GEMINI_MODELS = [
+    {"id": "gemini-3.8-live", "label": "Gemini 3.8 Live"},
+    {"id": "gemini-3.8-live-extended-thinking", "label": "Gemini 3.8 Live Extended Thinking"},
+    {"id": "gemini-3.1-flash-live-preview", "label": "Gemini 3.1 Flash Live Preview"},
+    {"id": "gemini-2.5-flash-native-audio-latest", "label": "Gemini 2.5 Flash Native Audio Latest"},
+    {"id": "gemini-2.5-flash-native-audio-preview-12-2025", "label": "Gemini 2.5 Flash Native Audio Preview 12-2025"},
+    {"id": "gemini-2.5-flash-native-audio-preview-09-2025", "label": "Gemini 2.5 Flash Native Audio Preview 09-2025"},
+]
+DEFAULT_GEMINI_MODEL = MODEL.removeprefix("models/")
+
+
+def normalize_model_name(name: str) -> str:
+    """Normalise un identifiant de modele Gemini (prefixe ``models/``)."""
+    clean = (name or "").strip()
+    if not clean:
+        return MODEL
+    return clean if clean.startswith("models/") else f"models/{clean}"
+
+
+def display_model_name(name: str) -> str:
+    """Identifiant de modele sans le prefixe ``models/`` pour le frontend."""
+    return normalize_model_name(name).removeprefix("models/")
+
+
+def gemini_model_catalog(models: list[dict] | None = None) -> list[dict]:
+    """Fusionne les modeles decouverts avec la liste de repli, sans doublon."""
+    seen: set[str] = set()
+    catalog: list[dict] = []
+    for entry in list(models or []) + GEMINI_MODELS:
+        model_id = display_model_name(str(entry.get("id", "")))
+        if not model_id or model_id in seen:
+            continue
+        seen.add(model_id)
+        catalog.append(
+            {
+                "id": model_id,
+                "label": str(entry.get("label") or model_id),
+                "default": model_id == DEFAULT_GEMINI_MODEL,
+            }
+        )
+    return catalog
+
+
 SAMPLE_WIDTH = 2  # 16-bit PCM -> 2 bytes per sample
 CONNECT_TIMEOUT = 30.0
 # Timeout for waiting on a full Gemini turn (whole audio generated). This is NOT
@@ -191,6 +238,99 @@ PROVIDER_MIMO = "MiMo TTS"
 # and defines the voice, so there is no separate preset-voice mode.
 MIMO_DEFAULT_URL = "https://api.xiaomimimo.com/v1/chat/completions"
 MIMO_DEFAULT_MODEL = "mimo-v2.5-tts-voiceclone"
+
+# URL(s) MiMo acceptées pour le clonage vocal.
+MIMO_URLS = [
+    MIMO_DEFAULT_URL,
+]
+
+# Modèle(s) MiMo disponibles pour le clonage vocal.
+MIMO_MODELS = [
+    MIMO_DEFAULT_MODEL,
+]
+
+# ---------------------------------------------------------------------------
+# Fish Audio (clonage zero-shot) — palier développeur gratuit ``s2.1-pro-free``.
+# La référence vocale est envoyée en octets bruts via un corps MessagePack sur
+# ``POST /v1/tts`` ; l'en-tête ``model`` choisit le palier gratuit.
+# ---------------------------------------------------------------------------
+FISH_DEFAULT_URL = "https://api.fish.audio/v1/tts"
+FISH_DEFAULT_MODEL = "s2.1-pro-free"
+FISH_MODELS = ["s2.1-pro-free", "s2.1-pro", "s2-pro", "s1"]
+PROVIDER_FISH = "Fish Audio TTS"
+
+# Catalogue des sites et modèles d'API compatibles avec l'application.
+# Il alimente la page Paramètres afin que l'utilisateur voie, pour chaque moteur,
+# le fournisseur, l'URL du service, le(s) modèle(s) et la clé éventuelle requise.
+# ``editable`` indique si l'URL/le modèle peuvent être modifiés à l'exécution.
+API_CATALOG: list[dict] = [
+    {
+        "id": "gemini",
+        "name": "Gemini",
+        "provider": "Google — Gemini Live API",
+        "site": "https://aistudio.google.com",
+        "siteLabel": "Google AI Studio",
+        "endpoint": "SDK google-genai (WebSocket temps réel)",
+        "models": [entry["id"] for entry in GEMINI_MODELS],
+        "defaultModel": DEFAULT_GEMINI_MODEL,
+        "apiKeyName": "GEMINI_API_KEY",
+        "needsKey": True,
+        "editable": True,
+        "kind": "sdk",
+        "voices": "30 voix expressives",
+        "notes": "Narration naturelle et très expressive. Le modèle Live est choisi dans le studio.",
+    },
+    {
+        "id": "edge",
+        "name": "Edge",
+        "provider": "Microsoft — Edge TTS (Azure Read Aloud)",
+        "site": "https://speech.microsoft.com/portal",
+        "siteLabel": "Microsoft Speech Portal",
+        "endpoint": "edge_tts (gratuit, sans clé)",
+        "models": ["edge-tts (322 voix / 75 langues)"],
+        "defaultModel": "edge-tts",
+        "apiKeyName": "",
+        "needsKey": False,
+        "editable": False,
+        "kind": "gratuit",
+        "voices": "322 voix multilingues",
+        "notes": "Aucune configuration. Le plus rapide, voix de haute qualité neuronale.",
+    },
+    {
+        "id": "mimo",
+        "name": "MiMo",
+        "provider": "Xiaomi — MiMo (clonage vocal)",
+        "site": "https://platform.xiaomimimo.com",
+        "siteLabel": "Xiaomi MiMo Platform",
+        "endpoint": MIMO_DEFAULT_URL,
+        "models": [MIMO_DEFAULT_MODEL],
+        "defaultModel": MIMO_DEFAULT_MODEL,
+        "apiKeyName": "MIMO_API_KEY",
+        "needsKey": True,
+        "editable": True,
+        "kind": "rest",
+        "urls": MIMO_URLS,
+        "voices": "1 voix clonée (la vôtre)",
+        "notes": "Clonage de voix à partir d'un clip. URL et modèle modifiables dans les paramètres.",
+    },
+    {
+        "id": "fish",
+        "name": "Fish",
+        "provider": "Fish Audio — clonage zero-shot (palier gratuit)",
+        "site": "https://fish.audio/app/api-keys/",
+        "siteLabel": "Fish Audio API Keys",
+        "endpoint": FISH_DEFAULT_URL,
+        "models": FISH_MODELS,
+        "defaultModel": FISH_DEFAULT_MODEL,
+        "apiKeyName": "FISH_API_KEY",
+        "needsKey": True,
+        "editable": True,
+        "kind": "rest",
+        "urls": [FISH_DEFAULT_URL],
+        "voices": "1 voix clonée (la vôtre), 83 langues",
+        "notes": "Palier gratuit s2.1-pro-free sans plafond strict (Fair Use). Clé gratuite sur fish.audio.",
+    },
+]
 
 # Edge TTS returns MP3 at 24 kHz mono; we decode it to the same 16-bit mono
 # PCM shape the rest of the pipeline already understands.
@@ -274,19 +414,6 @@ FFMPEG_SAMPLE_RATES = {
 def ffmpeg_available() -> bool:
     """Return True when an ``ffmpeg`` binary is reachable on this machine."""
     return shutil.which("ffmpeg") is not None
-
-
-def ffmpeg_version() -> str:
-    """Return the first line of ``ffmpeg -version`` or an empty string."""
-    if not ffmpeg_available():
-        return ""
-    try:
-        proc = subprocess.run(
-            ["ffmpeg", "-version"], capture_output=True, text=True, timeout=5
-        )
-        return proc.stdout.splitlines()[0] if proc.stdout else ""
-    except Exception:
-        return ""
 
 
 # ===========================================================================
@@ -438,6 +565,7 @@ class Job:
     """A single text-to-speech request travelling through the pipeline."""
     text: str
     voice: str = DEFAULT_VOICE
+    model: str = MODEL           # Gemini Live model used for this job
     system_prompt: str = DEFAULT_PROMPT
     save_path: str = ""          # optional destination (.wav/.mp3/...)
     tag: str = ""                # caller-supplied identifier (e.g. chunk index)
@@ -465,6 +593,7 @@ class TTSEngine:
 
     def __init__(self, api_key: str | None = None):
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
+        self.model = MODEL
         self.ffmpeg_path = ""
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._input_queue: Optional[asyncio.Queue] = None
@@ -500,7 +629,7 @@ class TTSEngine:
             self._playback_thread.start()
         if not self._ready.wait(timeout=10):
             raise EngineError("Le moteur TTS n'a pas demarre (timeout).")
-        log.info("Moteur TTS pret (modele=%s)", MODEL)
+        log.info("Moteur TTS pret (modele=%s)", self.model)
 
     def stop(self):
         """Request a graceful shutdown of the background loop."""
@@ -543,7 +672,8 @@ class TTSEngine:
     def speak(self, text: str, voice: str = DEFAULT_VOICE, *,
               collect_audio: bool = False, save_path: str = "",
               system_prompt: Optional[str] = None, tag: str = "",
-              speed: float = 1.0, gain: float = 1.0) -> Job:
+              speed: float = 1.0, gain: float = 1.0,
+              model: str = "") -> Job:
         """
         Queue a TTS job and block until Gemini finishes speaking.
 
@@ -558,6 +688,7 @@ class TTSEngine:
         job = Job(
             text=text,
             voice=voice,
+            model=normalize_model_name(model or self.model),
             tag=tag,
             speed=float(speed),
             gain=float(gain),
@@ -605,16 +736,17 @@ class TTSEngine:
         self._input_queue = asyncio.Queue()
         self._ready.set()
 
-        client = genai.Client(
-            http_options={"api_version": "v1beta"},
-            api_key=self.api_key,
-        )
-
         current_voice = DEFAULT_VOICE
-        pending_job: Optional[Job] = None  # job to replay after a voice switch
+        current_model = self.model
+        current_key = self.api_key
+        pending_job: Optional[Job] = None  # job to replay after a voice/model switch
         failures = 0
 
         while not self._shutdown:
+            client = genai.Client(
+                http_options={"api_version": "v1beta"},
+                api_key=current_key,
+            )
             config = types.LiveConnectConfig(
                 response_modalities=["AUDIO"],
                 output_audio_transcription=types.AudioTranscriptionConfig(),
@@ -635,8 +767,8 @@ class TTSEngine:
             receive_task = None
 
             try:
-                self._emit_status(f"Connexion (voix={current_voice})...")
-                async with client.aio.live.connect(model=MODEL, config=config) as session:
+                self._emit_status(f"Connexion (modele={current_model}, voix={current_voice})...")
+                async with client.aio.live.connect(model=current_model, config=config) as session:
                     failures = 0
                     self._emit_status("Connecte.")
 
@@ -680,11 +812,20 @@ class TTSEngine:
                             self._flush_playback()
                             continue
 
-                        # Voice switch requires reconnecting the session.
-                        if current_job.voice != current_voice:
+                        # Voice, model or API key change requires a fresh session.
+                        job_model = normalize_model_name(current_job.model or current_model)
+                        if (
+                            current_job.voice != current_voice
+                            or job_model != current_model
+                            or self.api_key != current_key
+                        ):
                             current_voice = current_job.voice
+                            current_model = job_model
+                            current_key = self.api_key
                             pending_job = current_job
-                            self._emit_status(f"Bascule vers la voix {current_voice}...")
+                            self._emit_status(
+                                f"Bascule vers {current_model} / voix {current_voice}..."
+                            )
                             break  # exit context -> reconnect
 
                         self._flush_playback()
@@ -1864,10 +2005,142 @@ class MiMoTTSEngine:
         return self._check_mimo_endpoint()
 
 
+# ===========================================================================
+# Fish Audio TTS engine — free developer tier voice cloning
+# ===========================================================================
+class FishTTSEngine(MiMoTTSEngine):
+    """
+    Fish Audio backend (``POST https://api.fish.audio/v1/tts``).
+
+    Zero-shot voice cloning: the reference clip and its transcript are sent as
+    raw bytes in a MessagePack body (``references``), the model is selected by
+    the ``model`` HTTP header — ``s2.1-pro-free`` is the free developer tier.
+    The response is the audio file itself (MP3/WAV binary), not JSON.
+    """
+
+    def __init__(self, api_key: str | None = None):
+        super().__init__(api_key)
+        self.mimo_url = FISH_DEFAULT_URL
+        self.mimo_key = ""
+        self.mimo_model = FISH_DEFAULT_MODEL
+        # Fish tolère des générations longues : délai plus confortable.
+        self.timeout = 120.0
+
+    # -- public TTS API ---------------------------------------------------
+    def speak(self, text: str, voice: str = "", *,
+              collect_audio: bool = False, save_path: str = "",
+              system_prompt: Optional[str] = None, tag: str = "",
+              speed: float = 1.0, gain: float = 1.0) -> Job:
+        """Synthesise ``text`` with the cloned voice; speed/gain applied locally."""
+        job = super().speak(
+            text, voice,
+            collect_audio=collect_audio, save_path=save_path,
+            system_prompt=system_prompt, tag=tag, speed=speed, gain=gain,
+        )
+        return job
+
+    # -- HTTP plumbing ----------------------------------------------------
+    def _request_audio(self, text: str, voice: str = "") -> tuple[bytes, str]:
+        """Fish Audio TTS request; return (audio_bytes, content_type)."""
+        import requests
+        import ormsgpack
+
+        if not self.ref_audio or not Path(self.ref_audio).exists():
+            raise EngineError(
+                "Clonage de voix : selectionnez un fichier audio de reference."
+            )
+        ref_path = Path(self.ref_audio)
+        reference = {
+            "audio": ref_path.read_bytes(),
+            # Le transcript du clip améliore la fidélité du clonage.
+            "text": self.ref_text or "",
+        }
+        payload = {
+            "text": text,
+            "references": [reference],
+            "format": "wav",
+            "sample_rate": RECEIVE_SAMPLE_RATE,
+            "latency": "balanced",
+        }
+
+        url = self.mimo_url or FISH_DEFAULT_URL
+        headers = {
+            "Content-Type": "application/msgpack",
+            "model": self.mimo_model or FISH_DEFAULT_MODEL,
+        }
+        key = self.mimo_key or self.api_key
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+
+        resp = requests.post(
+            url,
+            data=ormsgpack.packb(payload),
+            headers=headers,
+            timeout=self.timeout,
+        )
+        if resp.status_code >= 400:
+            detail = resp.text[:300] if resp.text else ""
+            if resp.status_code in (401, 403):
+                raise EngineError(
+                    "Authentification Fish Audio refusee : verifiez la cle API "
+                    "(https://fish.audio/app/api-keys/)."
+                )
+            if resp.status_code == 429:
+                raise EngineError(
+                    "Quota Fish Audio atteint (Fair Use du palier gratuit). "
+                    "Reessayez plus tard."
+                )
+            raise EngineError(
+                f"Reponse inattendue de Fish Audio : HTTP {resp.status_code} — {detail}"
+            )
+
+        audio = resp.content
+        if not audio:
+            raise EngineError("Fish Audio a repondu sans audio.")
+        content_type = resp.headers.get("Content-Type", "audio/wav")
+        return audio, content_type
+
+    def _to_pcm(self, audio: bytes, content_type: str) -> bytes:
+        """Decode Fish Audio output (WAV or MP3) to 16-bit mono PCM 24 kHz."""
+        if not audio:
+            return b""
+        if audio[:4] == b"RIFF":
+            return self._wav_to_pcm(audio)
+        return decode_mp3_to_pcm(audio, ffmpeg_path=self.ffmpeg_path)
+
+    def _check_fish_endpoint(self) -> tuple[bool, str]:
+        """Probe Fish Audio with a tiny real synthesis (needs a reference clip)."""
+        if not (self.mimo_key or self.api_key):
+            return False, (
+                "Cle Fish Audio requise. Crez une cle gratuite sur "
+                "https://fish.audio/app/api-keys/ puis collez-la ici."
+            )
+        ref = self.ref_audio
+        if not (ref and Path(ref).exists()):
+            return False, (
+                "Clip de reference requis : le clonage zero-shot attend un "
+                "extrait de 10-30 secondes de parole claire."
+            )
+        try:
+            audio, _ctype = self._request_audio("Test.")
+        except EngineError as exc:
+            return False, str(exc)
+        except Exception as exc:
+            return False, f"Injoignable : {exc}"
+        if audio:
+            return True, f"Service OK : {len(audio)} octets d'audio recus."
+        return False, "Le service a repondu sans audio."
+
+    def check_endpoint(self) -> tuple[bool, str]:
+        """Probe Fish Audio; return (reachable, human-readable message)."""
+        return self._check_fish_endpoint()
+
+
 # Module-level singleton so the legacy ``TTS`` function still works.
 _engine: Optional[TTSEngine] = None
 _edge_engine: Optional[EdgeTTSEngine] = None
 _mimo_engine: Optional[MiMoTTSEngine] = None
+_fish_engine: Optional[FishTTSEngine] = None
 
 
 def get_engine() -> TTSEngine:
@@ -1891,8 +2164,9 @@ def get_mimo_engine() -> MiMoTTSEngine:
     return _mimo_engine
 
 
-def TTS(query, voice=DEFAULT_VOICE):
-    """Backwards-compatible helper: synthesise ``query`` and return transcript."""
-    job = get_engine().speak(query, voice)
-    return job.transcript
+def get_fish_engine() -> FishTTSEngine:
+    global _fish_engine
+    if _fish_engine is None:
+        _fish_engine = FishTTSEngine()
+    return _fish_engine
 

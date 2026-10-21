@@ -1,12 +1,13 @@
 # Fautexprimer
 
-Application de bureau Windows de synthèse vocale avec trois moteurs :
+Application de bureau Windows de synthèse vocale avec quatre moteurs :
 
-- **Eben** — voix Gemini Live, 30 voix et styles expressifs ;
-- **Dane** — voix Edge TTS multilingues, sans clé API ;
-- **Michel** — clonage vocal à partir d’un clip de référence.
+- **Gemini** — voix Gemini Live, 30 voix et styles expressifs ;
+- **Edge** — voix Edge TTS multilingues, sans clé API ;
+- **MiMo** — clonage vocal à partir d’un clip de référence ;
+- **Fish** — clonage zero-shot via Fish Audio, palier développeur gratuit (`s2.1-pro`), 83 langues.
 
-L’interface est affichée dans une fenêtre PyWebView. Flask assure les communications locales entre le frontend HTML/CSS/JavaScript et les moteurs Python. Le frontend ne contient aucun framework et ne nécessite aucune étape de build.
+L’interface est affichée dans une fenêtre PyWebView. FastAPI (uvicorn) assure les communications locales entre le frontend HTML/CSS/JavaScript et les moteurs Python. Le frontend ne contient aucun framework et ne nécessite aucune étape de build.
 
 ## Fonctionnalités
 
@@ -18,9 +19,10 @@ L’interface est affichée dans une fenêtre PyWebView. Flask assure les commun
 - import d’un clip ou enregistrement direct au microphone ;
 - téléchargement audio via la boîte de dialogue Windows ;
 - historique local des synthèses, avec lecture, téléchargement, réutilisation et suppression ;
-- bibliothèque des clips importés ou enregistrés, avec renommage et sélection pour Michel ;
+- bibliothèque des clips importés ou enregistrés, avec renommage et sélection pour MiMo ;
 - icône Windows et favicon intégrés à l’exécutable et à l’interface ;
 - base SQLite créée automatiquement, jamais incluse dans le dossier de l’application ;
+- clés API et modèles Gemini/MiMo configurables depuis l’interface, avec sauvegarde locale ;
 - compteur dynamique des caractères, mots et phrases selon le moteur sélectionné ;
 
 ## Installation depuis les sources
@@ -35,10 +37,10 @@ python -m venv venv
 ## Lancer l’application
 
 ```powershell
-.\venv\Scripts\python.exe desktop_app.py
+.\venv\Scripts\python.exe desktop_launcher.py
 ```
 
-PyWebView démarre automatiquement le serveur Flask sur un port libre local.
+PyWebView démarre automatiquement le serveur FastAPI sur un port libre local.
 
 ## Compiler l’exécutable Windows
 
@@ -56,7 +58,15 @@ Le dossier `dist\Fautexprimer` constitue la distribution complète. Il contient 
 
 ## Configuration
 
-Copiez `.env.example` et renommez la copie `.env` :
+Ouvrez **Connexion & modèles** dans l’application pour saisir les clés Gemini et MiMo, choisir le modèle Gemini Live et l’endpoint MiMo. Le bouton **Actualiser** interroge l’API Gemini et liste les modèles Live disponibles avec la clé courante. Les changements de modèle sont enregistrés automatiquement ; le bouton **Enregistrer** conserve l’ensemble des options.
+
+La configuration est écrite dans :
+
+```text
+%LOCALAPPDATA%\fautexprimer\settings.json
+```
+
+Ce fichier est prioritaire au démarrage. Un fichier `.env` reste accepté comme solution de repli :
 
 ```env
 GEMINI_API_KEY=...
@@ -65,10 +75,11 @@ MIMO_API_KEY=...
 
 Ordre de priorité pour l’exécutable :
 
-1. `%LOCALAPPDATA%\Fautexprimer\.env` ;
-2. `.env` dans le dossier de l’exécutable.
+1. `settings.json` (interface) ;
+2. `%LOCALAPPDATA%\fautexprimer\.env` ;
+3. `.env` dans le dossier de l’exécutable.
 
-Aucune clé réelle n’est incluse dans le bundle.
+Les clés ne sont jamais renvoyées au navigateur par l’API locale. Aucune clé réelle n’est incluse dans le bundle.
 
 ## Limites de texte recommandées
 
@@ -76,21 +87,24 @@ Ces plafonds sont des limites prudentes de l’application, validés par des syn
 
 | Moteur | Caractères | Mots | Phrases |
 | --- | ---: | ---: | ---: |
-| Eben / Gemini Live | 8 000 | 1 400 | 200 |
-| Dane / Edge TTS | 20 000 | 3 500 | 600 |
-| Michel / MiMo | 4 000 | 700 | 120 |
+| Gemini Live | 8 000 | 1 400 | 200 |
+| Edge TTS | 20 000 | 3 500 | 600 |
+| MiMo | 4 000 | 700 | 120 |
+| Fish | 4 000 | 700 | 120 |
 
-Le serveur Flask applique ces plafonds également. Pour un texte plus long, utilisez plusieurs synthèses afin d’éviter les timeouts et de conserver une qualité audio stable.
+Le serveur FastAPI applique ces plafonds également. Pour un texte plus long, utilisez plusieurs synthèses afin d’éviter les timeouts et de conserver une qualité audio stable.
 
 ## Données utilisateur
 
 Dans l’exécutable, les données sont stockées dans :
 
 ```text
-%LOCALAPPDATA%\Fautexprimer\
-├── .env
+%LOCALAPPDATA%\fautexprimer\
+├── settings.json
 ├── fautexprimer.db
+├── .env
 ├── history\synthesis\
+├── uploads\
 ├── voices\
 ├── runtime\
 │   └── app.log
@@ -101,17 +115,20 @@ La base et les audios historiques ne sont jamais copiés dans `dist\Fautexprimer
 
 ## API locale
 
-Flask expose notamment :
+FastAPI expose notamment :
 
 | Route | Méthode | Rôle |
 | --- | --- | --- |
-| `/api/health` | GET | État des moteurs |
-| `/api/config` | GET | Voix, vitesses et formats |
+| `/api/health` | GET | État des moteurs et modèles actifs |
+| `/api/config` | GET | Voix, vitesses, formats et modèles |
+| `/api/settings` | GET / POST | Lire ou enregistrer la configuration locale |
+| `/api/models/gemini` | GET | Découvrir les modèles Gemini Live disponibles |
 | `/api/voices/edge` | GET | Catalogue Edge |
 | `/api/synthesize` | POST | Génération audio |
 | `/api/upload-ref` | POST | Importer un clip de référence |
 | `/api/history` | GET | Statistiques, synthèses et voix |
 | `/api/history/syntheses/<id>/audio` | GET | Lire une synthèse archivée |
+| `/api/history/syntheses/<id>/as-voice` | POST | Réutiliser une synthèse comme clip MiMo |
 | `/api/history/syntheses/<id>/formats` | GET | Télécharger plusieurs formats en ZIP |
 | `/api/history/voices/<id>/audio` | GET | Lire une voix archivée |
 | `/api/history/voices/<id>` | PATCH | Renommer une voix |

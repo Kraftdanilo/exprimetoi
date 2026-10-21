@@ -3,205 +3,417 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Fautexprimer, studio de synthese vocale Eben, Dane et Michel.">
-  <title>Fautexprimer </title>
-  <link rel="icon" type="image/png" href="{{ url_for('static', filename='fautexprimer.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-  <script defer src="{{ url_for('static', filename='js/app.js') }}"></script>
+  <meta name="description" content="Fautexprimer, studio de synthèse vocale local avec Gemini, Edge et MiMo.">
+  <title>Fautexprimer — Studio vocal</title>
+  <link rel="icon" type="image/png" href="/static/fautexprimer.png">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script type="module" src="/static/js/main.js"></script>
 </head>
 <body>
-  <main class="wrap" id="studio-loading">
-    <div class="ticker" aria-hidden="true"><div class="ticker-track">
-      <span class="ticker-item">Fautexprimer</span><span class="ticker-item">Studio vocal local</span><span class="ticker-item">Eben</span><span class="ticker-item">Dane</span><span class="ticker-item">Michel</span><span class="ticker-item">Export WAV / MP3 / OGG / FLAC / M4A</span><span class="ticker-item">Vitesse 0.5x - 2.0x</span>
-      <span class="ticker-item">Fautexprimer</span><span class="ticker-item">Studio vocal local</span><span class="ticker-item">Eben</span><span class="ticker-item">Dane</span><span class="ticker-item">Michel</span><span class="ticker-item">Export WAV / MP3 / OGG / FLAC / M4A</span><span class="ticker-item">Vitesse 0.5x - 2.0x</span>
-    </div></div>
-    <section class="studio-skeleton" aria-label="Chargement du studio" aria-busy="true">
-      <div class="sk-title"><span class="sk sk-line" style="width:52%;height:26px"></span><span class="sk sk-line" style="width:74%"></span></div>
-      <div class="sk-rows"><span class="sk sk-pill"></span><span class="sk sk-pill"></span><span class="sk sk-pill"></span></div>
-      <div class="sk-rows"><span class="sk" style="height:42px"></span><span class="sk" style="height:42px"></span></div>
-      <div class="sk-stack" style="margin-bottom:16px"><span class="sk" style="height:120px"></span></div>
-      <span class="sk" style="width:46%;height:44px"></span>
-    </section>
-  </main>
+  <div class="loading-bar" id="loading-bar" aria-hidden="true"></div>
 
-  <main class="wrap" id="studio" hidden>
-    <div class="ticker" aria-hidden="true"><div class="ticker-track">
-      <span class="ticker-item">Fautexprimer</span><span class="ticker-item">Studio vocal local</span><span class="ticker-item">Eben</span><span class="ticker-item">Dane</span><span class="ticker-item">Michel</span><span class="ticker-item">Export WAV / MP3 / OGG / FLAC / M4A</span><span class="ticker-item">Vitesse 0.5x - 2.0x</span>
-      <span class="ticker-item">Fautexprimer</span><span class="ticker-item">Studio vocal local</span><span class="ticker-item">Eben</span><span class="ticker-item">Dane</span><span class="ticker-item">Michel</span><span class="ticker-item">Export WAV / MP3 / OGG / FLAC / M4A</span><span class="ticker-item">Vitesse 0.5x - 2.0x</span>
-    </div></div>
-
-    <header class="header">
-      <div class="header-top">
-        <a class="brand" href="#/" aria-label="Retour au studio">
-          <img src="{{ url_for('static', filename='fautexprimer.png') }}" alt="" width="52" height="52">
-          <span>Fautexprimer <span class="sticker" aria-hidden="true">3 moteurs</span></span>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar" aria-label="Navigation principale">
+      <div class="brand-row">
+        <a class="brand" href="#/" aria-label="Fautexprimer, retour au studio">
+          <img src="/static/fautexprimer.png" alt="" width="38" height="38">
+          <span><strong>Fautexprimer</strong><small>Studio vocal local</small></span>
         </a>
-        <nav class="top-nav" aria-label="Navigation principale">
-          <a class="ghost" href="#/">Studio</a>
-          <a class="ghost" href="#/history">Historique</a>
-          <a class="ghost vitrine-link" href="#/vitrine">Les modeles</a>
-        </nav>
-      </div>
-      <p class="sub">
-        Studio vocal local — Eben, Dane et Michel.
-        <span class="dot wait" id="health-dot" aria-hidden="true"></span>
-        <span class="sr-only" id="health-text" aria-live="polite">Etat du service en cours de verification</span>
-      </p>
-    </header>
-
-    <section class="card">
-      <div class="pills" id="provider-pills" role="tablist" aria-label="Choix du moteur"></div>
-      <p class="provider-note" id="provider-note" aria-live="polite"></p>
-      <div class="text-dashboard" aria-label="Mesure du texte">
-        <div><strong id="text-chars">0</strong><span>caracteres</span></div>
-        <div><strong id="text-words">0</strong><span>mots</span></div>
-        <div><strong id="text-sentences">0</strong><span>phrases</span></div>
-        <div><strong id="text-limit">20 000</strong><span>limite moteur</span></div>
+        <button class="icon-btn sidebar-close" id="sidebar-close" type="button" aria-label="Fermer le menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
       </div>
 
-      <div class="row" id="voice-row">
-        <label class="field grow" id="gemini-field" hidden>
-          <span id="gemini-label">Voix Eben</span>
-          <select id="gemini-voice" aria-label="Voix Eben"></select>
-        </label>
-        <div class="field grow voice-skeleton" id="edge-loading" hidden>
-          <span>Chargement des voix</span>
-          <div class="sk-stack"><span class="sk sk-line"></span><span class="sk sk-line"></span><span class="sk sk-line"></span></div>
+      <nav class="nav" aria-label="Navigation">
+        <a class="nav-link" href="#/" data-route="studio">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h3l2-6 2 12 3-9 2 3h4"/></svg>
+          Studio
+        </a>
+        <a class="nav-link" href="#/history" data-route="history">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="3"/></svg>
+          Historique
+        </a>
+        <a class="nav-link" href="#/catalog" data-route="catalog">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>
+          Catalogue API
+        </a>
+      </nav>
+
+      <section class="engine-section" aria-labelledby="engine-title">
+        <h2 class="section-label" id="engine-title">Moteur actif</h2>
+        <div class="engine-list" id="engine-list"></div>
+      </section>
+
+      <div class="sidebar-footer">
+        <div class="health-card">
+          <span class="status-dot" id="health-dot" aria-hidden="true"></span>
+          <div>
+            <strong id="health-title">Service local</strong>
+            <small id="health-label">Vérification…</small>
+          </div>
         </div>
-        <label class="field grow" id="edge-search-field" hidden>
-          <span id="edge-count">Rechercher des voix</span>
-          <input type="search" id="edge-search" placeholder="fr, Denise, anglais..." autocomplete="off">
-        </label>
-        <label class="field grow" id="edge-field" hidden>
-          <span id="edge-label">Voix Dane</span>
-          <select id="edge-voice" aria-label="Voix Dane"></select>
-        </label>
-        <p class="sub" id="mimo-description" hidden>
-          Clonage de voix : Michel reproduit la voix du clip de reference ci-dessous
-          et lit votre texte avec cette voix. Un clip audio est toujours requis.
-        </p>
+        <button class="btn btn-secondary btn-block" id="open-settings" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+          Configuration
+        </button>
       </div>
-    </section>
-      <div class="panel" id="mimo-panel" hidden>
-        <div class="row">
-          <label class="field grow">
-            <span>Audio de reference (voix a cloner)</span>
-            <input type="file" id="ref-file" accept="audio/*">
+    </aside>
+
+    <div class="scrim" id="scrim" hidden></div>
+
+    <div class="main-column">
+      <header class="mobile-header">
+        <button class="icon-btn" id="sidebar-toggle" type="button" aria-label="Ouvrir le menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+        <a class="brand brand--compact" href="#/">
+          <img src="/static/fautexprimer.png" alt="" width="30" height="30">
+          <strong>Fautexprimer</strong>
+        </a>
+        <button class="icon-btn" id="open-settings-mobile" type="button" aria-label="Ouvrir la configuration">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+        </button>
+      </header>
+
+      <main class="main">
+        <section class="page" id="page-studio" aria-labelledby="studio-title">
+          <header class="page-head">
+            <div>
+              <p class="eyebrow">Studio vocal</p>
+              <h1 id="studio-title">Créer une voix</h1>
+              <p class="lead">Transformez un texte en audio avec le moteur de votre choix. Tout reste sur cet ordinateur.</p>
+            </div>
+            <div class="head-actions">
+              <span class="engine-pill" id="active-engine">Edge</span>
+            </div>
+          </header>
+
+          <div class="banner" id="setup-banner" hidden>
+            <div>
+              <strong>Finalisez la configuration</strong>
+              <p>Ajoutez une clé Gemini ou MiMo pour utiliser les moteurs cloud. Edge fonctionne sans clé.</p>
+            </div>
+            <button class="btn btn-secondary" id="setup-open-settings" type="button">Configurer</button>
+          </div>
+
+          <section class="panel editor-panel">
+            <div class="panel-head">
+              <div>
+                <h2>Texte à convertir</h2>
+                <p id="provider-note">Edge · 20 000 caractères maximum</p>
+              </div>
+              <span class="counter" id="text-counter">0 / 20 000</span>
+            </div>
+            <textarea id="text" rows="7" placeholder="Saisissez ou collez votre texte ici…">Bonjour ! Bienvenue dans Fautexprimer, votre studio de synthèse vocale local.</textarea>
+            <div class="metrics">
+              <div class="metric"><strong id="text-chars">0</strong><span>caractères</span></div>
+              <div class="metric"><strong id="text-words">0</strong><span>mots</span></div>
+              <div class="metric"><strong id="text-sentences">0</strong><span>phrases</span></div>
+              <div class="metric"><strong id="text-limit">20 000</strong><span>limite moteur</span></div>
+            </div>
+            <p class="field-error" id="limit-message" hidden></p>
+          </section>
+
+          <section class="panel options-panel">
+            <div class="panel-head">
+              <div>
+                <h2>Voix et rendu</h2>
+                <p>Choisissez une voix, un modèle et les réglages d'export.</p>
+              </div>
+            </div>
+            <div class="options-grid">
+              <label class="field" id="gemini-voice-field" hidden>
+                <span>Voix Gemini</span>
+                <select id="gemini-voice"></select>
+              </label>
+              <label class="field" id="gemini-model-field" hidden>
+                <span>Modèle Gemini</span>
+                <div class="inline-control">
+                  <select id="gemini-model"></select>
+                  <button class="btn btn-ghost" id="refresh-models" type="button" title="Actualiser les modèles">Actualiser</button>
+                </div>
+              </label>
+              <label class="field" id="edge-search-field" hidden>
+                <span>Recherche de voix</span>
+                <input type="search" id="edge-search" placeholder="fr, Denise, anglais…" autocomplete="off">
+              </label>
+              <label class="field" id="edge-voice-field" hidden>
+                <span>Voix Edge <small id="edge-count"></small></span>
+                <select id="edge-voice"></select>
+              </label>
+              <label class="field">
+                <span>Vitesse <output id="speed-value">1.00×</output></span>
+                <input type="range" id="speed" min="0.5" max="2" step="0.05" value="1">
+              </label>
+              <label class="field">
+                <span>Volume <output id="gain-value">100 %</output></span>
+                <input type="range" id="gain" min="0" max="2" step="0.05" value="1">
+              </label>
+            </div>
+            <fieldset class="formats-field">
+              <legend>Formats d'export</legend>
+              <div class="format-list" id="format-options"></div>
+              <p class="hint" id="format-summary">1 format sélectionné</p>
+            </fieldset>
+          </section>
+
+          <section class="panel mimo-panel" id="mimo-panel" hidden>
+            <div class="panel-head">
+              <div>
+                <h2>Voix de référence</h2>
+                <p>MiMo clone le clip fourni. Un extrait de quelques secondes suffit.</p>
+              </div>
+              <span class="status-badge" id="clip-status">Aucun clip</span>
+            </div>
+            <div class="reference-grid">
+              <label class="dropzone" id="ref-dropzone">
+                <input type="file" id="ref-file" accept="audio/*" hidden>
+                <span class="dropzone-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
+                </span>
+                <strong>Importer un clip audio</strong>
+                <small>WAV, MP3, OGG, M4A — glissez le fichier ici</small>
+              </label>
+              <div class="record-card">
+                <div>
+                  <strong>Enregistrer au micro</strong>
+                  <small id="record-hint">Jusqu'à 30 secondes</small>
+                </div>
+                <button class="btn btn-secondary" id="record-button" type="button">Démarrer l'enregistrement</button>
+              </div>
+            </div>
+            <div class="options-grid options-grid--compact">
+              <label class="field" id="fish-model-field" hidden>
+                <span>Modèle Fish Audio</span>
+                <input type="text" id="fish-model" list="fish-model-options" autocomplete="off" placeholder="s2.1-pro-free">
+              </label>
+              <label class="field">
+                <span>Modèle MiMo</span>
+                <input type="text" id="mimo-model" list="mimo-model-options" autocomplete="off" placeholder="mimo-v2.5-tts-voiceclone">
+              </label>
+              <label class="field">
+                <span>Endpoint MiMo</span>
+                <input type="text" id="mimo-url" list="mimo-url-options" autocomplete="off" placeholder="https://api.xiaomimimo.com/v1/chat/completions">
+              </label>
+            </div>
+            <datalist id="fish-model-options"></datalist>
+          </section>
+
+          <div class="generate-row">
+            <p class="inline-status" id="studio-status" role="status" aria-live="polite" hidden></p>
+            <button class="btn btn-primary btn-lg" id="synthesize" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h3l2-7 4 14 2-7h3"/></svg>
+              Générer la voix
+            </button>
+          </div>
+
+          <section class="panel result-panel" id="result-panel" hidden>
+            <div class="panel-head">
+              <div>
+                <h2>Résultat</h2>
+                <p id="result-meta"></p>
+              </div>
+              <a class="btn btn-primary" id="download" href="#" download> Télécharger </a>
+            </div>
+            <audio id="audio-player" controls preload="metadata"></audio>
+            <details class="transcript" id="result-transcript" hidden>
+              <summary>Transcription</summary>
+              <p id="transcript-text"></p>
+            </details>
+          </section>
+        </section>
+
+        <section class="page" id="page-history" aria-labelledby="history-title" hidden>
+          <header class="page-head">
+            <div>
+              <p class="eyebrow">Bibliothèque locale</p>
+              <h1 id="history-title">Historique</h1>
+              <p class="lead">Retrouvez vos synthèses et vos clips de référence. Les fichiers restent sur cet ordinateur.</p>
+            </div>
+            <div class="head-actions">
+              <button class="btn btn-secondary" id="history-refresh" type="button">Actualiser</button>
+            </div>
+          </header>
+
+          <div class="stats-grid" id="history-stats"></div>
+
+          <div class="toolbar">
+            <label class="search-field">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg>
+              <input type="search" id="history-search" placeholder="Rechercher un texte, une voix, un moteur…" autocomplete="off">
+            </label>
+          </div>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Synthèses</h2>
+                <p>Tous les audios générés par l'application.</p>
+              </div>
+              <button class="btn btn-danger-ghost" id="clear-syntheses" type="button">Tout supprimer</button>
+            </div>
+            <div class="card-list" id="syntheses-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Clips de référence</h2>
+                <p>Voix importées ou enregistrées pour MiMo.</p>
+              </div>
+              <button class="btn btn-danger-ghost" id="clear-voices" type="button">Tout supprimer</button>
+            </div>
+            <div class="card-list" id="voices-list"></div>
+          </section>
+        </section>
+
+        <section class="page" id="page-catalog" aria-labelledby="catalog-title" hidden>
+          <header class="page-head">
+            <div>
+              <p class="eyebrow">Intégrations</p>
+              <h1 id="catalog-title">Catalogue API</h1>
+              <p class="lead">Fournisseurs, endpoints et modèles reconnus par Fautexprimer.</p>
+            </div>
+            <div class="head-actions">
+              <button class="btn btn-secondary" id="catalog-refresh" type="button">Actualiser</button>
+            </div>
+          </header>
+          <div class="catalog-grid" id="catalog-list"></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <dialog class="dialog dialog--wide" id="settings-dialog" aria-labelledby="settings-title">
+    <form class="dialog-form" id="settings-form">
+      <header class="dialog-head">
+        <div>
+          <h2 id="settings-title">Configuration</h2>
+          <p>Clés et modèles enregistrés localement sur cet ordinateur.</p>
+        </div>
+        <button class="icon-btn" id="close-settings" type="button" aria-label="Fermer">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </header>
+
+      <div class="dialog-body">
+        <section class="settings-section" id="settings-gemini">
+          <div class="settings-section-head">
+            <h3>Gemini</h3>
+            <span class="status-badge" id="gemini-key-state">Non configurée</span>
+          </div>
+          <label class="field">
+            <span>Clé API Gemini</span>
+            <div class="inline-control">
+              <input type="password" id="set-gemini-key" autocomplete="off" placeholder="Coller la clé Google AI Studio">
+              <button class="btn btn-ghost" id="toggle-gemini-key" type="button">Afficher</button>
+            </div>
           </label>
           <label class="field">
-            <span>Micro</span>
-            <button type="button" class="ghost" id="record-button">Enregistrer (micro)</button>
+            <span>Modèle Gemini Live</span>
+            <div class="inline-control">
+                  <select id="set-gemini-model"></select>
+                  <button class="btn btn-ghost" id="settings-refresh-models" type="button">Actualiser</button>
+            </div>
           </label>
-        </div>
-        <p class="sub clip-ok" id="clip-ready" hidden></p>
+          <div class="settings-actions">
+            <button class="btn btn-secondary" id="save-gemini-inline" type="button">Enregistrer Gemini</button>
+            <button class="btn btn-ghost" id="clear-gemini-key" type="button">Effacer la clé</button>
+            <span class="hint">Ces réglages n'affectent pas MiMo.</span>
+          </div>
+          <p class="hint" id="models-hint">Le modèle est appliqué automatiquement après changement.</p>
+        </section>
+
+        <section class="settings-section" id="settings-mimo">
+          <div class="settings-section-head">
+            <h3>MiMo</h3>
+            <span class="status-badge" id="mimo-key-state">Non configurée</span>
+          </div>
+          <label class="field">
+            <span>Clé API MiMo</span>
+            <div class="inline-control">
+              <input type="password" id="set-mimo-key" autocomplete="off" placeholder="Coller la clé Xiaomi MiMo">
+              <button class="btn btn-ghost" id="toggle-mimo-key" type="button">Afficher</button>
+            </div>
+          </label>
+          <div class="options-grid options-grid--compact">
+            <label class="field">
+              <span>Modèle MiMo</span>
+              <input type="text" id="set-mimo-model" list="mimo-model-options" autocomplete="off" placeholder="mimo-v2.5-tts-voiceclone">
+            </label>
+            <label class="field">
+              <span>Endpoint MiMo</span>
+              <input type="text" id="set-mimo-url" list="mimo-url-options" autocomplete="off" placeholder="https://api.xiaomimimo.com/v1/chat/completions">
+            </label>
+          </div>
+          <div class="settings-actions">
+            <button class="btn btn-secondary" id="test-endpoint" type="button">Tester MiMo</button>
+            <button class="btn btn-secondary" id="save-mimo-inline" type="button">Enregistrer MiMo</button>
+            <button class="btn btn-ghost" id="clear-mimo-key" type="button">Effacer la clé</button>
+            <span class="hint">Ces réglages n'affectent pas Gemini.</span>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h3>Avancé</h3>
+          <label class="field">
+            <span>Chemin ffmpeg <small>(optionnel)</small></span>
+            <input type="text" id="set-ffmpeg-path" autocomplete="off" placeholder="Détection automatique">
+          </label>
+          <label class="field">
+            <span>Prompt système Gemini <small>(préfixe envoyé au modèle)</small></span>
+            <textarea id="set-system-prompt" rows="3" placeholder="Repeat the following text exactly. Output nothing else:"></textarea>
+          </label>
+          <p class="hint" id="settings-storage"></p>
+        </section>
       </div>
 
-      <div class="row sliders">
-        <label class="field grow">
-          <span id="speed-label">Vitesse 1.00x</span>
-          <input type="range" id="speed" min="0.5" max="2" step="0.05" value="1">
-        </label>
-        <label class="field grow">
-          <span id="gain-label">Volume 100%</span>
-          <input type="range" id="gain" min="0" max="2" step="0.05" value="1">
-        </label>
-        <div class="field format-field">
-          <span>Formats de téléchargement</span>
-          <div class="format-options" id="format-options" role="group" aria-label="Formats audio à télécharger"></div>
-          <small class="format-summary" id="format-summary">1 format sélectionné</small>
+      <footer class="dialog-foot">
+        <p class="inline-status" id="settings-status" role="status" aria-live="polite" hidden></p>
+        <div class="dialog-actions">
+          <button class="btn btn-secondary" id="save-gemini" type="button">Enregistrer Gemini</button>
+          <button class="btn btn-secondary" id="save-mimo" type="button">Enregistrer MiMo</button>
+          <button class="btn btn-primary" id="save-settings" type="submit">Tout enregistrer</button>
+        </div>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog class="dialog" id="confirm-dialog" aria-labelledby="confirm-title">
+    <div class="dialog-head">
+      <div>
+        <h2 id="confirm-title">Confirmer</h2>
+        <p id="confirm-message"></p>
+      </div>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn btn-ghost" id="confirm-cancel" type="button">Annuler</button>
+      <button class="btn btn-danger" id="confirm-accept" type="button">Confirmer</button>
+    </div>
+  </dialog>
+
+  <dialog class="dialog" id="prompt-dialog" aria-labelledby="prompt-title">
+    <form class="dialog-form" id="prompt-form">
+      <div class="dialog-head">
+        <div>
+          <h2 id="prompt-title">Renommer</h2>
+          <p id="prompt-message"></p>
         </div>
       </div>
-
       <label class="field">
-        <span>Texte a convertir <span class="counter ok" id="text-counter">0 / 20 000 caracteres</span></span>
-        <textarea id="text" rows="6" placeholder="Saisissez votre texte ici...">Bonjour ! Ceci est une demonstration de synthese vocale locale.</textarea>
+        <span id="prompt-label">Nom</span>
+        <input type="text" id="prompt-input" autocomplete="off">
       </label>
-      <p class="status err limit-msg" id="limit-message" hidden></p>
-      <p class="text-hint">Les limites sont des plafonds prudents de l'application, pas des garanties universelles des fournisseurs. Pour un texte long, utilisez plusieurs syntheses.</p>
-
-      <div class="actions">
-        <p class="status" id="status" role="status" aria-live="polite" hidden></p>
-        <button class="primary" id="synthesize" type="button">Synthetiser</button>
+      <div class="dialog-actions">
+        <button class="btn btn-ghost" id="prompt-cancel" type="button">Annuler</button>
+        <button class="btn btn-primary" id="prompt-accept" type="submit">Valider</button>
       </div>
+    </form>
+  </dialog>
 
-      <div class="result result--busy" id="synthesis-busy" aria-label="Synthese en cours" hidden>
-        <div class="wave" id="wave"></div><span class="sk sk-block"></span>
-      </div>
-      <div class="result" id="audio-result" hidden>
-        <audio id="audio-player" controls preload="metadata"></audio>
-        <a class="download" id="download" href="#" download="synthese.wav">Telecharger (WAV)</a>
-      </div>
-    </section>
+  <datalist id="mimo-model-options"></datalist>
+  <datalist id="mimo-url-options"></datalist>
 
-    <footer class="foot">Developpe pour vous — fait a Soubre, le 22 septembre 2026.</footer>
-  </main>
-
-  <main class="wrap wrap-wide" id="history-page" hidden>
-    <div class="ticker" aria-hidden="true"><div class="ticker-track">
-      <span class="ticker-item">Fautexprimer</span><span class="ticker-item">Historique local</span><span class="ticker-item">Syntheses</span><span class="ticker-item">Voix enregistrees</span><span class="ticker-item">SQLite automatique</span><span class="ticker-item">Donnees privees</span>
-      <span class="ticker-item">Fautexprimer</span><span class="ticker-item">Historique local</span><span class="ticker-item">Syntheses</span><span class="ticker-item">Voix enregistrees</span><span class="ticker-item">SQLite automatique</span><span class="ticker-item">Donnees privees</span>
-    </div></div>
-    <header class="header vitrine-header">
-      <a class="ghost back" href="#/">← Retour au studio</a>
-      <div class="history-heading">
-        <div><h1>Historique <span class="sticker sticker--yellow" aria-hidden="true">Local</span></h1><p class="sub">Vos syntheses et clips restent sur ce ordinateur dans une base SQLite privee.</p></div>
-        <button class="ghost" id="history-refresh" type="button">Actualiser</button>
-      </div>
-      <div class="history-stats" id="history-stats" aria-label="Statistiques"></div>
-    </header>
-
-    <section class="history-section" aria-labelledby="synth-history-title">
-      <div class="history-section-head"><div><h2 id="synth-history-title">Synthesees generees</h2><p>Tous les audios produits par l'application.</p></div><button class="danger" id="clear-syntheses" type="button">Tout supprimer</button></div>
-      <div class="history-list" id="syntheses-list"></div>
-    </section>
-
-    <section class="history-section" aria-labelledby="voices-history-title">
-      <div class="history-section-head"><div><h2 id="voices-history-title">Voix importees / enregistrees</h2><p>Les clips disponibles pour Michel.</p></div><button class="danger" id="clear-voices" type="button">Tout supprimer</button></div>
-      <div class="history-list" id="voices-list"></div>
-    </section>
-    <footer class="foot">Historique local — aucune base de donnees dans le dossier partageable.</footer>
-  </main>
-
-  <main class="wrap wrap-wide" id="vitrine" hidden>
-    <div class="ticker" aria-hidden="true"><div class="ticker-track">
-      <span class="ticker-item">Fautexprimer</span><span class="ticker-item">Studio vocal local</span><span class="ticker-item">Eben</span><span class="ticker-item">Dane</span><span class="ticker-item">Michel</span><span class="ticker-item">Export WAV / MP3 / OGG / FLAC / M4A</span><span class="ticker-item">Vitesse 0.5x - 2.0x</span>
-      <span class="ticker-item">Fautexprimer</span><span class="ticker-item">Studio vocal local</span><span class="ticker-item">Eben</span><span class="ticker-item">Dane</span><span class="ticker-item">Michel</span><span class="ticker-item">Export WAV / MP3 / OGG / FLAC / M4A</span><span class="ticker-item">Vitesse 0.5x - 2.0x</span>
-    </div></div>
-    <header class="header vitrine-header">
-      <a class="ghost back" href="#/">← Retour au studio</a>
-      <h1>Fautexprimer <span class="sticker sticker--yellow" aria-hidden="true">Comparatif</span></h1>
-      <p class="sub">Trois moteurs de synthese vocale dans une seule interface. Choisissez selon la qualite, la langue ou la voix recherchees.</p>
-    </header>
-    <section class="models" id="models"></section>
-    <section class="compare">
-      <h2>Comparatif rapide</h2>
-      <div class="table-scroll">
-        <table>
-          <thead><tr><th>Critere</th><th>Eben</th><th>Dane</th><th>Michel</th></tr></thead>
-          <tbody>
-            <tr><td>Choix de voix</td><td>30</td><td>322 (75 langues)</td><td>1 (la votre)</td></tr>
-            <tr><td>Qualite</td><td>★★★★★</td><td>★★★★</td><td>★★★★</td></tr>
-            <tr><td>Rapidite</td><td>★★★</td><td>★★★★★</td><td>★★★★</td></tr>
-            <tr><td>Multilingue</td><td>Oui</td><td>Oui (75)</td><td>Oui</td></tr>
-            <tr><td>Capacite recommandee</td><td>8 000 car.<br>1 400 mots / 200 phrases</td><td>20 000 car.<br>3 500 mots / 600 phrases</td><td>4 000 car.<br>700 mots / 120 phrases</td></tr>
-            <tr><td>Clonage de voix</td><td>Non</td><td>Non</td><td>Oui</td></tr>
-            <tr><td>Acces</td><td>Cle requise</td><td>Libre</td><td>Configuration requise</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-    <section class="howto">
-      <h2>Comment utiliser</h2>
-      <ol class="steps">
-        <li><strong>Choisissez un moteur</strong> avec les pastilles en haut du studio.</li>
-        <li><strong>Selectionnez une voix</strong> (ou enregistrez un clip pour Michel).</li>
-        <li><strong>Reglez la vitesse et le volume</strong> puis saisissez votre texte. Le compteur indique la limite du moteur choisi.</li>
-        <li><strong>Cliquez Synthetiser</strong> — la lecture demarre et le fichier est telechargeable.</li>
-      </ol>
-    </section>
-    <div class="vitrine-cta"><a class="primary" href="#/">Ouvrir le studio</a></div>
-    <footer class="foot">Eben · Dane · Michel — synthese vocale locale.</footer>
-  </main>
+  <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="false"></div>
 </body>
 </html>
-

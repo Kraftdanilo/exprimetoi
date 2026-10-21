@@ -38,4 +38,5 @@ desktop.ini
 .DS_Store
 
 debug_routes.py
+.vscode/
 

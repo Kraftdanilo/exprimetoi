@@ -13,7 +13,7 @@ if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
     throw "ffmpeg est introuvable dans le PATH. Ajoutez son dossier bin avant la compilation."
 }
 
-& $python "tools\generate_icon.py"
+& $python "tools\icon_builder.py"
 & $python -m pip install -r "requirements.txt"
 & $python -m PyInstaller --noconfirm --clean "Fautexprimer.spec"
 
@@ -39,4 +39,4 @@ Write-Host ""
 Write-Host "Compilation terminee." -ForegroundColor Green
 Write-Host "Executable: $exe"
 Write-Host "Dossier distribuable: $distDir"
-Write-Host "Configuration: renommez .env.example en .env si des cles API sont necessaires."
+Write-Host "Configuration: renseignez les cles API dans l'application (Connexion & modeles)."
