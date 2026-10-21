@@ -121,7 +121,9 @@ FastAPI expose notamment :
 | --- | --- | --- |
 | `/api/health` | GET | État des moteurs et modèles actifs |
 | `/api/config` | GET | Voix, vitesses, formats et modèles |
+| `/api/api-catalog` | GET | Catalogue des sites et modèles d'API compatibles, avec l'état des clés |
 | `/api/settings` | GET / POST | Lire ou enregistrer la configuration locale |
+| `/api/test-endpoint` | POST | Tester un endpoint MiMo avec la clé et le clip fournis |
 | `/api/models/gemini` | GET | Découvrir les modèles Gemini Live disponibles |
 | `/api/voices/edge` | GET | Catalogue Edge |
 | `/api/synthesize` | POST | Génération audio |
